@@ -157,8 +157,11 @@ async function saveFile(filePath: string, text: string): Promise<void> {
 
 async function openFile(filePath: string): Promise<void> {
     try {
-        const document = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
-        await vscode.window.showTextDocument(document, { preview: true, preserveFocus: true });
+        await vscode.commands.executeCommand(
+            'vscode.open',
+            vscode.Uri.file(filePath),
+            { preview: true, preserveFocus: true }
+        );
     } catch (error) {
         vscode.window.showErrorMessage(`无法打开文件: ${error instanceof Error ? error.message : String(error)}`);
     }

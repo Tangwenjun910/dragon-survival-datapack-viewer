@@ -116,20 +116,7 @@
         return currentLang === 'zh' ? zh : en;
     }
 
-    const KIND_LABELS = {
-        dragon_species: '龙种',
-        dragon_stage: '阶段',
-        dragon_ability: '能力',
-        dragon_penalty: '惩罚',
-        projectile_data: '弹射物',
-        dragon_body: '龙体',
-        dragon_emote_set: '表情组',
-        diet_entries: '食物列表',
-        stage_resources: '阶段资源',
-        end_platforms: '末地平台',
-        dragon_beacon_data: '祭坛/信标效果',
-        body_icons: '龙体图标'
-    };
+
 
     const $ = (id) => document.getElementById(id);
 
@@ -534,7 +521,7 @@
         return `
             <div class="card" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
                 <div class="card-header">
-                    <span class="card-title">${esc(KIND_LABELS[entry.kind] || entry.id)}</span>
+                    <span class="card-title">${esc(kindLabel(entry.kind))}</span>
                     <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
                 </div>
                 <div class="card-subtitle">${esc(entry.id)}</div>
@@ -543,7 +530,7 @@
     }
 
     function renderTagCard(tag) {
-        const registryLabel = KIND_LABELS[tag.registry] || tag.registry;
+        const registryLabel = kindLabel(tag.registry);
         return `
             <div class="card">
                 <div class="card-header">
@@ -1450,7 +1437,19 @@
         block_break_radius: '方块破坏半径',
         safe_fall_distance: '安全摔落距离',
         step_height: '台阶高度',
-        movement_speed: '移动速度'
+        movement_speed: '移动速度',
+        structure: '结构',
+        spawn_position: '出生点坐标',
+        payment_data: '支付数据',
+        duration_multiplier: '持续时间倍率',
+        beneficial: '有益',
+        neutral: '中立',
+        harmful: '有害',
+        colors: '颜色',
+        color_shift_rate: '颜色变化速率',
+        particle_rate: '粒子速率',
+        block_visions: '方块视野',
+        display_type: '显示类型'
     };
 
     const ENUM_OPTIONS = {

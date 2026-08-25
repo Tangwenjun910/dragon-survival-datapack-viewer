@@ -1383,7 +1383,9 @@
         empty: '空',
         hover_icon: '悬浮图标',
         font: '字体',
-        custom_growth_info: '自定义成长提示'
+        custom_growth_info: '自定义成长提示',
+        abilities: '能力',
+        penalties: '惩罚'
     };
 
     const ENUM_OPTIONS = {

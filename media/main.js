@@ -112,6 +112,10 @@
         return dict[key] || key;
     }
 
+    function tr(zh, en) {
+        return currentLang === 'zh' ? zh : en;
+    }
+
     const KIND_LABELS = {
         dragon_species: '龙种',
         dragon_stage: '阶段',
@@ -694,42 +698,42 @@
         const secondaryColor = colors.secondary_color || '#FFFFFF';
 
         return `
-            <div class="section-title">食物悬浮框颜色</div>
+            <div class="section-title">${tr('食物悬浮框颜色', 'Food Tooltip Hover Colors')}</div>
             <div class="color-edit-grid">
                 <label class="color-edit-field">
-                    <span class="form-label">主色</span>
+                    <span class="form-label">${tr('主色', 'Primary')}</span>
                     <div class="color-edit-control">
                         <input type="color" id="primaryColorPicker" value="${esc(primaryColor)}">
                         <span id="primaryColorHex" class="color-hex">${esc(primaryColor)}</span>
                     </div>
                 </label>
                 <label class="color-edit-field">
-                    <span class="form-label">辅色</span>
+                    <span class="form-label">${tr('辅色', 'Secondary')}</span>
                     <div class="color-edit-control">
                         <input type="color" id="secondaryColorPicker" value="${esc(secondaryColor)}">
                         <span id="secondaryColorHex" class="color-hex">${esc(secondaryColor)}</span>
                     </div>
                 </label>
             </div>
-            <button id="saveColorBtn" class="back-button primary">保存颜色</button>
+            <button id="saveColorBtn" class="back-button primary">${tr('保存颜色', 'Save Colors')}</button>
 
-            <div class="section-title">🐲 龙种引用</div>
+            <div class="section-title">🐲 ${tr('龙种引用', 'Species References')}</div>
             <div class="ability-editor">${renderStructuredForm({ abilities: d.abilities, penalties: d.penalties }, 0, [])}</div>
 
-            <div class="section-title">🎨 misc_resources 全部字段</div>
+            <div class="section-title">🎨 ${tr('misc_resources 全部字段', 'All misc_resources Fields')}</div>
             <div class="ability-editor">${renderStructuredForm(d.misc_resources || {}, 0, ['misc_resources'])}</div>
 
-            <div class="section-title">阶段链</div>
+            <div class="section-title">${tr('阶段链', 'Stage Chain')}</div>
             <div class="flow">
                 ${stages.length ? stages.map((stage, i) => {
                     const stageEntry = findEntry('dragon_stage', stage);
                     const isDefault = stageEntry && stageEntry.data && stageEntry.data.is_default;
                     return `${i > 0 ? '<span class="flow-arrow">→</span>' : ''}<span class="flow-node ${isDefault ? 'default' : ''}" title="${esc(stage)}">${esc(shortName(stage))}</span>`;
-                }).join('') : '<span class="empty-state">未配置</span>'}
+                }).join('') : `<span class="empty-state">${tr('未配置', 'Not configured')}</span>`}
             </div>
-            <div class="section-title">能力 (${abilities.length})</div>
+            <div class="section-title">${esc(t('abilities'))} (${abilities.length})</div>
             ${renderIdTable(abilities, 'dragon_ability')}
-            <div class="section-title">惩罚 (${penalties.length})</div>
+            <div class="section-title">${esc(t('penalties'))} (${penalties.length})</div>
             ${renderIdTable(penalties, 'dragon_penalty')}
         `;
     }
@@ -777,12 +781,7 @@
         const growthItems = d.growth_items || [];
         const destruction = d.destruction_data || {};
 
-        const infoItems = [
-            ['成长范围', `${fmt(range.min)} ~ ${fmt(range.max)}`],
-            ['成熟耗时', formatTicks(d.ticks_until_grown)],
-            ['方块破坏成长', fmt(destruction.block_destruction_growth)],
-            ['碾压成长', fmt(destruction.crushing_growth)]
-        ].filter(item => item[1] !== undefined && item[1] !== '').map(([k, v]) => `<div class="info-item"><div class="info-label">${esc(k)}</div><div class="info-value">${esc(v)}</div></div>`).join('');
+
 
         const modifierRows = modifiers.map(m => {
             const amount = typeof m.amount === 'object' ? JSON.stringify(m.amount) : fmt(m.amount);
@@ -798,26 +797,26 @@
             <div class="section-title">${esc(t('stageAttrs'))}</div>
             <div class="ability-editor">
                 <div class="editor-field">
-                    <label class="form-label">默认阶段</label>
+                    <label class="form-label">${tr('默认阶段', 'Default Stage')}</label>
                     <select id="isDefaultStage" class="form-select">
-                        <option value="true" ${d.is_default ? 'selected' : ''}>是</option>
-                        <option value="false" ${!d.is_default ? 'selected' : ''}>否</option>
+                        <option value="true" ${d.is_default ? 'selected' : ''}>${tr('是', 'Yes')}</option>
+                        <option value="false" ${!d.is_default ? 'selected' : ''}>${tr('否', 'No')}</option>
                     </select>
                 </div>
                 <div class="editor-field">
-                    <label class="form-label">自然生长停止</label>
+                    <label class="form-label">${tr('自然生长停止', 'Natural Growth Stopped')}</label>
                     <select id="isNaturalGrowthStopped" class="form-select">
-                        <option value="true" ${d.is_natural_growth_stopped ? 'selected' : ''}>是</option>
-                        <option value="false" ${!d.is_natural_growth_stopped ? 'selected' : ''}>否</option>
+                        <option value="true" ${d.is_natural_growth_stopped ? 'selected' : ''}>${tr('是', 'Yes')}</option>
+                        <option value="false" ${!d.is_natural_growth_stopped ? 'selected' : ''}>${tr('否', 'No')}</option>
                     </select>
                 </div>
                 <button id="saveStageBtn" class="back-button primary">${esc(t('saveMod'))}</button>
             </div>
             <div class="info-grid">${infoItems}</div>
             <div class="section-title">${esc(t('modifiers'))} (${modifiers.length})</div>
-            ${modifiers.length ? `<table><thead><tr><th>属性</th><th>运算</th><th>数值</th></tr></thead><tbody>${modifierRows}</tbody></table>` : '<div class="empty-state">无</div>'}
+            ${modifiers.length ? `<table><thead><tr><th>${tr('属性', 'Attribute')}</th><th>${tr('运算', 'Operation')}</th><th>${tr('数值', 'Amount')}</th></tr></thead><tbody>${modifierRows}</tbody></table>` : `<div class="empty-state">${tr('无', 'None')}</div>`}
             <div class="section-title">${esc(t('growthItems'))} (${growthItems.length})</div>
-            ${growthItems.length ? `<table><thead><tr><th>物品</th><th>成长时间</th></tr></thead><tbody>${itemRows}</tbody></table>` : '<div class="empty-state">无</div>'}
+            ${growthItems.length ? `<table><thead><tr><th>${tr('物品', 'Item')}</th><th>${tr('成长时间', 'Growth Time')}</th></tr></thead><tbody>${itemRows}</tbody></table>` : `<div class="empty-state">${tr('无', 'None')}</div>`}
         `;
     }
 
@@ -924,30 +923,30 @@
         return `
             <div class="ability-editor">
                 <div class="editor-field">
-                    <label class="form-label">激活类型</label>
+                    <label class="form-label">${tr('激活类型', 'Activation Type')}</label>
                     <select id="activationType" class="form-select">
                         ${ACTIVATION_TYPE_OPTIONS.map(option => `<option value="${esc(option.value)}" ${option.value === activationType ? 'selected' : ''}>${esc(getEnumLabel(option))}</option>`).join('')}
                     </select>
                 </div>
-                ${renderEditableNumber('初始魔力消耗', 'initialManaCost', activation.initial_mana_cost)}
+                ${renderEditableNumber(tr('初始魔力消耗', 'Initial Mana Cost'), 'initialManaCost', activation.initial_mana_cost)}
                 <div class="editor-field">
-                    <label class="form-label">持续魔力消耗</label>
+                    <label class="form-label">${tr('持续魔力消耗', 'Continuous Mana Cost')}</label>
                     <div class="editor-row">
                         <select id="continuousManaType" class="form-select">
                             <option value="ticking" ${continuous.type === 'ticking' ? 'selected' : ''}>${currentLang === 'zh' ? '持续' : 'Ticking'}</option>
                         </select>
                         <input type="number" id="continuousManaAmount" class="form-input" step="0.01"
-                            value="${typeof continuous.amount === 'number' ? continuous.amount : ''}" placeholder="数值">
+                            value="${typeof continuous.amount === 'number' ? continuous.amount : ''}" placeholder="${tr('数值', 'Amount')}">
                     </div>
                 </div>
-                ${renderEditableNumber(currentLang === 'zh' ? '施法时间（刻）' : 'Cast Time (ticks)', 'castTime', activation.cast_time)}
-                ${renderEditableNumber(currentLang === 'zh' ? '冷却（刻）' : 'Cooldown (ticks)', 'cooldown', activation.cooldown)}
-                ${renderEditableNumber(currentLang === 'zh' ? '最大持续时间（刻）' : 'Max Duration (ticks)', 'maxDuration', activation.max_duration)}
+                ${renderEditableNumber(tr('施法时间（刻）', 'Cast Time (ticks)'), 'castTime', activation.cast_time)}
+                ${renderEditableNumber(tr('冷却（刻）', 'Cooldown (ticks)'), 'cooldown', activation.cooldown)}
+                ${renderEditableNumber(tr('最大持续时间（刻）', 'Max Duration (ticks)'), 'maxDuration', activation.max_duration)}
                 <div class="editor-field">
-                    <label class="form-label">移动时施法</label>
+                    <label class="form-label">${tr('移动时施法', 'Can Move While Casting')}</label>
                     <select id="canMoveWhileCasting" class="form-select">
-                        <option value="true" ${canMove ? 'selected' : ''}>是</option>
-                        <option value="false" ${!canMove ? 'selected' : ''}>否</option>
+                        <option value="true" ${canMove ? 'selected' : ''}>${tr('是', 'Yes')}</option>
+                        <option value="false" ${!canMove ? 'selected' : ''}>${tr('否', 'No')}</option>
                     </select>
                 </div>
             </div>`;
@@ -958,24 +957,24 @@
         const maxLevel = upgrade.maximum_level ?? 1;
         const requirement = upgrade.experience_cost || upgrade.level_requirement || upgrade.growth_requirement;
         let requirementPath = 'experience_cost';
-        let requirementLabel = '等级/经验要求';
+        let requirementLabel = tr('等级/经验要求', 'Level/Experience Requirement');
         if (upgrade.experience_cost) requirementPath = 'experience_cost';
         else if (upgrade.level_requirement) requirementPath = 'level_requirement';
         else if (upgrade.growth_requirement) requirementPath = 'growth_requirement';
-        if (upgradeType.includes('experience_points')) requirementLabel = '经验消耗';
-        else if (upgradeType.includes('experience_levels')) requirementLabel = '等级要求';
-        else if (upgradeType.includes('dragon_growth')) requirementLabel = '成长要求';
+        if (upgradeType.includes('experience_points')) requirementLabel = tr('经验消耗', 'Experience Cost');
+        else if (upgradeType.includes('experience_levels')) requirementLabel = tr('等级要求', 'Level Requirement');
+        else if (upgradeType.includes('dragon_growth')) requirementLabel = tr('成长要求', 'Growth Requirement');
 
         return `
             <div class="ability-editor">
                 <div class="editor-field">
-                    <label class="form-label">升级类型</label>
+                    <label class="form-label">${tr('升级类型', 'Upgrade Type')}</label>
                     <select id="upgradeType" class="form-select">
                         ${UPGRADE_TYPE_OPTIONS.map(option => `<option value="${esc(option.value)}" ${option.value === upgradeType ? 'selected' : ''}>${esc(getEnumLabel(option))}</option>`).join('')}
                     </select>
                 </div>
                 <div class="editor-field">
-                    <label class="form-label">最大等级</label>
+                    <label class="form-label">${tr('最大等级', 'Maximum Level')}</label>
                     <input type="number" id="maxLevel" class="form-input" value="${esc(maxLevel)}">
                 </div>
                 ${requirement ? `
@@ -1011,10 +1010,10 @@
             if (value.type === 'minecraft:linear') {
                 const base = value.base ?? '';
                 const per = value.per_level_above_first ?? '';
-                return `<span class="form-value">基础 ${esc(base)}${per !== '' ? `，每级 +${esc(per)}` : ''}</span>`;
+                return `<span class="form-value">${tr('基础', 'Base')} ${esc(base)}${per !== '' ? `，${tr('每级 +', 'per level +')}${esc(per)}` : ''}</span>`;
             }
             if (value.type === 'minecraft:lookup' && Array.isArray(value.values)) {
-                return `<span class="form-value">各级数值：${esc(value.values.join(' / '))}</span>`;
+                return `<span class="form-value">${tr('各级数值：', 'Level values: ')}${esc(value.values.join(' / '))}</span>`;
             }
             return renderStructuredForm(value, 0, path);
         }
@@ -1385,7 +1384,73 @@
         font: '字体',
         custom_growth_info: '自定义成长提示',
         abilities: '能力',
-        penalties: '惩罚'
+        penalties: '惩罚',
+        nutrition: '营养',
+        saturation: '饱和度',
+        can_always_eat: '饱食度满可吃',
+        eat_seconds: '食用时间',
+        using_converts_to: '吃完变成',
+        retain_effects: '保留原效果',
+        growth_in_ticks: '成长刻数',
+        ticks_until_grown: '成熟刻数',
+        growth_range: '成长范围',
+        projectile_data: '弹射物数据',
+        number_of_projectiles: '弹射物数量',
+        projectile_spread: '弹道扩散',
+        target_direction: '目标方向',
+        speed: '速度',
+        direction: '方向',
+        percentage: '百分比',
+        ignite_ticks: '点燃刻数',
+        max_oxygen: '最大氧气',
+        fluid_type: '流体类型',
+        fluid_types: '流体类型',
+        oxygen_bonus: '氧气加成',
+        harvest_bonuses: '挖掘加成',
+        base_speed: '基础速度',
+        break_speed_multiplier: '破坏速度倍率',
+        tiers: '等级列表',
+        item_conversions: '物品转换',
+        items_to: '转换后物品',
+        conversion_rate: '转换数量',
+        weight: '权重',
+        duration_modification: '持续时间修改',
+        amplifier_modification: '等级修改',
+        modification_type: '修改类型',
+        particle_count: '粒子数量',
+        particle_data: '粒子数据',
+        level_requirement: '等级要求',
+        experience_cost: '经验消耗',
+        items_per_level: '每级物品',
+        downgrade_items: '降级物品',
+        conditions: '条件列表',
+        require_previous: '需要前置',
+        custom_icon: '自定义图标',
+        early_removal_condition: '提前移除条件',
+        should_remove_automatically: '自动移除',
+        layer: '动画层',
+        animation_key: '动画ID',
+        transition_length: '过渡时长',
+        locks_neck: '锁定脖子',
+        locks_tail: '锁定尾巴',
+        loops: '循环',
+        blend: '融合',
+        can_move: '可移动',
+        sound_event: '音效',
+        interval: '间隔',
+        pitch: '音调',
+        volume: '音量',
+        start_and_charging: '开始与蓄力',
+        looping: '循环动画',
+        start: '开始',
+        charging: '蓄力',
+        end: '结束',
+        main_particle: '主粒子',
+        secondary_particle: '次级粒子',
+        block_break_radius: '方块破坏半径',
+        safe_fall_distance: '安全摔落距离',
+        step_height: '台阶高度',
+        movement_speed: '移动速度'
     };
 
     const ENUM_OPTIONS = {

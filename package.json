@@ -2,7 +2,7 @@
   "name": "dragon-survival-datapack-viewer",
   "displayName": "龙之生存数据包可视化",
   "description": "在侧边栏可视化 Dragon Survival（龙之生存）数据包：物种、阶段、能力、惩罚、弹射物数据，并支持基础编辑。",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "publisher": "local",
   "license": "MIT",
   "repository": {

@@ -451,8 +451,8 @@
         const abilities = meta.abilities || [];
         const penalties = meta.penalties || [];
         const colors = (d.misc_resources || {});
-        const primary = colors.primary_color || '#2E2888';
-        const secondary = colors.secondary_color || '#C6BDFF';
+        const primary = colors.primary_color || '#FFFFFF';
+        const secondary = colors.secondary_color || '#FFFFFF';
 
         const flowHtml = stages.length > 0 ? `
             <div class="flow">
@@ -553,8 +553,8 @@
         const abilities = meta.abilities || [];
         const penalties = meta.penalties || [];
         const colors = d.misc_resources || {};
-        const primaryColor = colors.primary_color || '#2E2888';
-        const secondaryColor = colors.secondary_color || '#C6BDFF';
+        const primaryColor = colors.primary_color || '#FFFFFF';
+        const secondaryColor = colors.secondary_color || '#FFFFFF';
 
         const infoItems = [
             ['能力槽纹理', colors.ability_bar || ''],

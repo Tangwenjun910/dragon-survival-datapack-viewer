@@ -934,15 +934,15 @@
                     <label class="form-label">持续魔力消耗</label>
                     <div class="editor-row">
                         <select id="continuousManaType" class="form-select">
-                            <option value="ticking" ${continuous.type === 'ticking' ? 'selected' : ''}>Ticking</option>
+                            <option value="ticking" ${continuous.type === 'ticking' ? 'selected' : ''}>${currentLang === 'zh' ? '持续' : 'Ticking'}</option>
                         </select>
                         <input type="number" id="continuousManaAmount" class="form-input" step="0.01"
                             value="${typeof continuous.amount === 'number' ? continuous.amount : ''}" placeholder="数值">
                     </div>
                 </div>
-                ${renderEditableNumber('施法时间（tick）', 'castTime', activation.cast_time)}
-                ${renderEditableNumber('冷却（tick）', 'cooldown', activation.cooldown)}
-                ${renderEditableNumber('最大持续时间（tick）', 'maxDuration', activation.max_duration)}
+                ${renderEditableNumber(currentLang === 'zh' ? '施法时间（刻）' : 'Cast Time (ticks)', 'castTime', activation.cast_time)}
+                ${renderEditableNumber(currentLang === 'zh' ? '冷却（刻）' : 'Cooldown (ticks)', 'cooldown', activation.cooldown)}
+                ${renderEditableNumber(currentLang === 'zh' ? '最大持续时间（刻）' : 'Max Duration (ticks)', 'maxDuration', activation.max_duration)}
                 <div class="editor-field">
                     <label class="form-label">移动时施法</label>
                     <select id="canMoveWhileCasting" class="form-select">

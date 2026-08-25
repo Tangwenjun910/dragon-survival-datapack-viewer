@@ -52,6 +52,11 @@ media/
   dragon.svg                # 活动栏图标
 ```
 
+## 图标来源
+
+- 活动栏龙图标使用 [Font Awesome Free](https://fontawesome.com) 的 `dragon` 图标。
+- License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)（图标部分），其余代码为 MIT License。
+
 ## 已知限制
 
 - 保存时会重写为标准 JSON（移除注释和尾逗号）。

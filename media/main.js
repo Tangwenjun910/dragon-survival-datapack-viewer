@@ -912,23 +912,33 @@
 
     function renderAbilityDetail(entry) {
         const d = entry.data || {};
-        const activation = d.activation || {};
+        const activation = d.activation = d.activation || {};
         const upgrade = d.upgrade || {};
         const actions = d.actions || [];
         const icon = d.icon || {};
 
         const iconEntries = (icon.texture_entries || []).map(ie => `<span class="chip">Lv${ie.from_level} → ${esc(shortName(ie.texture_resource))}</span>`).join('');
+        const rootSchema = getAbilitySchema([], d);
+        const rootPalette = renderFieldPalette([], d, false, false, rootSchema.addable);
 
         return `
+            ${rootPalette ? `<div class="section-title">${esc(tr('可选字段', 'Optional Fields'))}</div>` : ''}
+            ${rootPalette}
             <div class="section-title">${esc(t('activation'))}</div>
-            ${renderActivationEditor(activation)}
-            <div class="section-title">${esc(t('upgrade'))}</div>
-            ${renderUpgradeEditor(upgrade)}
+            <div class="ability-editor">${renderStructuredForm(activation, 0, ['activation'])}</div>
+            ${d.upgrade ? `<div class="section-title">${esc(t('upgrade'))}
+                <button class="delete-field-btn" data-map-path="${encodeURIComponent(JSON.stringify([]))}" data-field-key="upgrade" title="删除字段">🗑</button>
+            </div>
+            <div class="ability-editor">${renderStructuredForm(upgrade, 0, ['upgrade'])}</div>` : ''}
             ${d.usage_blocked ? `
-                <div class="section-title">${esc(t('usageBlocked'))}</div>
+                <div class="section-title">${esc(t('usageBlocked'))}
+                    <button class="delete-field-btn" data-map-path="${encodeURIComponent(JSON.stringify([]))}" data-field-key="usage_blocked" title="删除字段">🗑</button>
+                </div>
                 <div class="ability-editor">${renderStructuredForm(d.usage_blocked, 0, ['usage_blocked'])}</div>` : ''}
             ${d.can_be_manually_disabled != null ? `
-                <div class="section-title">${esc(t('other'))}</div>
+                <div class="section-title">${esc(t('other'))}
+                    <button class="delete-field-btn" data-map-path="${encodeURIComponent(JSON.stringify([]))}" data-field-key="can_be_manually_disabled" title="删除字段">🗑</button>
+                </div>
                 <div class="ability-editor">
                     <div class="editor-field">
                         <label class="form-label">可手动禁用</label>
@@ -1101,35 +1111,6 @@
 
         saveBtn.addEventListener('click', () => {
             const data = JSON.parse(JSON.stringify(entry.data || {}));
-            data.activation = data.activation || {};
-
-            const activationType = $('activationType');
-            if (activationType) data.activation.activation_type = activationType.value;
-
-            setNumberField(data.activation, 'initial_mana_cost', $('initialManaCost'));
-            setNumberField(data.activation, 'cast_time', $('castTime'));
-            setNumberField(data.activation, 'cooldown', $('cooldown'));
-            setNumberField(data.activation, 'max_duration', $('maxDuration'));
-
-            const contType = $('continuousManaType');
-            const contAmount = $('continuousManaAmount');
-            if (contType && contAmount && contAmount.value.trim() !== '') {
-                data.activation.continuous_mana_cost = {
-                    type: contType.value,
-                    amount: Number(contAmount.value)
-                };
-            } else {
-                delete data.activation.continuous_mana_cost;
-            }
-
-            const canMove = $('canMoveWhileCasting');
-            if (canMove) data.activation.can_move_while_casting = canMove.value === 'true';
-
-            data.upgrade = data.upgrade || {};
-            const upgradeType = $('upgradeType');
-            if (upgradeType) data.upgrade.upgrade_type = upgradeType.value;
-            setNumberField(data.upgrade, 'maximum_level', $('maxLevel'));
-
             const canDisable = $('canBeManuallyDisabled');
             if (canDisable) data.can_be_manually_disabled = canDisable.value === 'true';
 
@@ -1208,23 +1189,33 @@
                 </div>`;
             }
 
+            const schema = currentDetail && currentDetail.kind === 'dragon_ability'
+                ? getAbilitySchema(path, value)
+                : currentDetail && currentDetail.kind === 'dragon_species'
+                    ? getSpeciesSchema(path, value)
+                    : null;
+            const schemaAddable = schema ? schema.addable : null;
+            const deletableFields = schema && Object.keys(schema.addable).length > 0
+                ? Object.keys(value).filter(field => !schema.required.includes(field))
+                : [];
+
             if (entries.length === 0) {
                 const lastKey = path[path.length - 1];
-                if (lastKey === 'applied_effects') {
-                    return `<div class="form-object">${renderFieldPalette(path, value, false, false)}</div>`;
+                if (lastKey === 'applied_effects' || (schemaAddable && Object.keys(schemaAddable).length > 0)) {
+                    return `<div class="form-object">${renderFieldPalette(path, value, false, false, schemaAddable)}</div>`;
                 }
                 return '<span class="form-empty">空对象</span>';
             }
 
             const isProperties = path.length > 0 && path[path.length - 1] === 'properties';
             const isDietEntryRoot = Object.prototype.hasOwnProperty.call(value, 'items') && Object.prototype.hasOwnProperty.call(value, 'properties');
-            const canDeleteField = isProperties || isDietEntryRoot;
+            const canDeleteField = isProperties || isDietEntryRoot || deletableFields.length > 0;
 
             return `<div class="form-object">${entries.map(([key, val]) => {
                 const label = humanizeKey(key);
                 const childPath = [...path, key];
                 const pathStr = encodeURIComponent(JSON.stringify(path));
-                const deleteBtn = canDeleteField && key !== 'items'
+                const deleteBtn = canDeleteField && key !== 'items' && (isProperties || isDietEntryRoot || deletableFields.includes(key))
                     ? `<button class="delete-field-btn" data-map-path="${pathStr}" data-field-key="${esc(key)}" title="删除字段">🗑</button>`
                     : '';
 
@@ -1248,7 +1239,9 @@
                 }
 
                 const fieldPath = encodeURIComponent(JSON.stringify(childPath));
-                const enumOptions = ENUM_OPTIONS[childPath[childPath.length - 1]];
+                const fieldKey = childPath[childPath.length - 1];
+                const enumKey = fieldKey === 'effect_type' && childPath.includes('block_effect') ? 'block_effect_type' : fieldKey;
+                const enumOptions = ENUM_OPTIONS[enumKey];
                 let fieldControl;
 
                 if (enumOptions) {
@@ -1277,7 +1270,7 @@
                         <span class="form-label">${esc(label)}</span>
                         <span class="field-control-row">${fieldControl}${deleteBtn}</span>
                     </div>`;
-            }).join('')}${renderFieldPalette(path, value, isProperties, isDietEntryRoot)}</div>`;
+            }).join('')}${renderFieldPalette(path, value, isProperties, isDietEntryRoot, schemaAddable)}</div>`;
         }
 
         return `<div class="form-field"><span class="form-value">${esc(formatValue(value))}</span></div>`;
@@ -1304,7 +1297,252 @@
         effects: []
     };
 
-    function renderFieldPalette(path, obj, isProperties, isDietEntryRoot) {
+    // ---- Dragon Ability mcdoc 参考的可选字段/默认值 ----
+
+    const ACTIVATION_AUTO_FIELDS = {
+        'dragonsurvival:passive': {
+            continuous_mana_cost: { type: 'ticking', amount: 1 },
+            cooldown: 1,
+            trigger: { trigger_type: 'dragonsurvival:constant' }
+        },
+        'dragonsurvival:simple': {
+            initial_mana_cost: 1,
+            cast_time: 1,
+            cooldown: 1,
+            notification: { not_enough_mana: '', usage_blocked: '' },
+            can_move_while_casting: true,
+            sound: { start: '', end: '' },
+            animations: {
+                start_and_charging: { animation_key: '', layer: 'BASE', locks_neck: false, locks_tail: false },
+                end: { animation_key: '', layer: 'BASE', locks_neck: false, locks_tail: false }
+            }
+        },
+        'dragonsurvival:channeled': {
+            initial_mana_cost: 1,
+            continuous_mana_cost: { type: 'ticking', amount: 1 },
+            cast_time: 1,
+            cooldown: 1,
+            max_duration: 1,
+            notification: { not_enough_mana: '', usage_blocked: '' },
+            can_move_while_casting: true,
+            sound: { start: '', looping: '', end: '' },
+            animations: {
+                start_and_charging: { animation_key: '', layer: 'BASE', locks_neck: false, locks_tail: false },
+                looping: { animation_key: '', layer: 'BASE', locks_neck: false, locks_tail: false },
+                end: { animation_key: '', layer: 'BASE', locks_neck: false, locks_tail: false }
+            }
+        }
+    };
+
+    const UPGRADE_AUTO_FIELDS = {
+        'dragonsurvival:experience_points': { maximum_level: 1, experience_cost: 1 },
+        'dragonsurvival:experience_levels': { maximum_level: 1, level_requirement: 1 },
+        'dragonsurvival:dragon_growth': { maximum_level: 1, growth_requirement: 1 },
+        'dragonsurvival:item_based': { items_per_level: [], downgrade_items: '' },
+        'dragonsurvival:condition_based': { conditions: [], require_previous: false }
+    };
+
+    const ENTITY_EFFECT_OPTIONAL_FIELDS = {
+        'dragonsurvival:damage': { scale: '', expression: '', use_claw: false },
+        'dragonsurvival:modifier': {},
+        'dragonsurvival:potion': { probability: 1, effect_particles: false, show_icon: true },
+        'dragonsurvival:projectile': { projectile_spread: 1 },
+        'dragonsurvival:summon_entity': { attribute_scales: [], is_allied: true },
+        'dragonsurvival:damage_modification': {},
+        'dragonsurvival:breath_particles': {},
+        'dragonsurvival:ignite': {},
+        'dragonsurvival:harvest_bonus': {},
+        'dragonsurvival:on_attack': {},
+        'dragonsurvival:flight': { icon: '' },
+        'dragonsurvival:spin': { fluid_types: '' },
+        'dragonsurvival:item_conversion': {},
+        'dragonsurvival:swim': {},
+        'dragonsurvival:effect_modification': {},
+        'dragonsurvival:particle': {},
+        'dragonsurvival:glow': {},
+        'dragonsurvival:oxygen_bonus': { fluid_types: '' },
+        'dragonsurvival:block_vision': { blocks: '', particle_rate: 10, color_shift_rate: 1 },
+        'dragonsurvival:run_function': {},
+        'dragonsurvival:smelting': { item_predicate: {}, progress: 1, grants_experience: true },
+        'dragonsurvival:heal': {},
+        'dragonsurvival:teleport': {},
+        'dragonsurvival:push': {},
+        'dragonsurvival:hunger': {},
+        'dragonsurvival:effect_removal': { categories: [], valid_effects: '', max_amount: 1, maximum_effect_level: 1 },
+        'dragonsurvival:use_item': { probability: 1, sound: '', valid_entities: {} },
+        'dragonsurvival:dragon_growth': { probability: 1 },
+        'dragonsurvival:mana_recovery': { probability: 1 },
+        'dragonsurvival:experience': { probability: 1 },
+        'dragonsurvival:cooldown_recovery': { abilities: '', probability: 1, exclude_this: true }
+    };
+
+    const BLOCK_EFFECT_AUTO_FIELDS = {
+        'dragonsurvival:bonemeal': { attempts: 1, probability: 1 },
+        'dragonsurvival:conversion': { conversion_data: [], probability: 1 },
+        'dragonsurvival:summon_entity': { base: {}, entities: [], max_summons: 1, nbt: {} },
+        'dragonsurvival:fire': { ignite_probability: 1 },
+        'dragonsurvival:area_cloud': {
+            potion: { effects: [], amplifier: 0, duration: 0 },
+            duration: 1,
+            probability: 1,
+            particle: { type: '' }
+        },
+        'dragonsurvival:block_break': { valid_blocks: { type: '' }, probability: 1 },
+        'dragonsurvival:particle': { particle_data: {}, particle_count: 1 },
+        'dragonsurvival:run_function': { function: '' },
+        'dragonsurvival:use_item': { item: {} },
+        'dragonsurvival:explosion': { power: 1, damage_type: 'minecraft:player_explosion' },
+        'dragonsurvival:block_harvest': { valid_blocks: {} }
+    };
+
+    const BLOCK_EFFECT_OPTIONAL_FIELDS = {
+        'dragonsurvival:bonemeal': {},
+        'dragonsurvival:conversion': {},
+        'dragonsurvival:summon_entity': { attribute_scales: [], is_allied: true },
+        'dragonsurvival:fire': {},
+        'dragonsurvival:area_cloud': { delay: 1, radius: 1 },
+        'dragonsurvival:block_break': { drop_loot: false },
+        'dragonsurvival:particle': {},
+        'dragonsurvival:run_function': {},
+        'dragonsurvival:use_item': { probability: 1, sound: '', valid_blocks: {} },
+        'dragonsurvival:explosion': { probability: 1, fire: true },
+        'dragonsurvival:block_harvest': { probability: 1, tool: {} }
+    };
+
+    function pathKey(path) {
+        return path.map(seg => typeof seg === 'number' ? '*' : seg).join('.');
+    }
+
+    function getAbilitySchema(path, obj) {
+        const key = pathKey(path);
+        const addable = {};
+        const required = [];
+        const add = (fields, req = []) => {
+            Object.assign(addable, fields);
+            required.push(...req);
+        };
+
+        if (key === '') {
+            add({
+                upgrade: { upgrade_type: 'dragonsurvival:experience_points', maximum_level: 1 },
+                usage_blocked: { condition: 'minecraft:random_chance', chance: 0.5 },
+                can_be_manually_disabled: true
+            });
+        } else if (key === 'activation') {
+            const type = obj && obj.activation_type;
+            const fields = Object.assign(
+                { activation_type: 'dragonsurvival:simple' },
+                ACTIVATION_AUTO_FIELDS[type] || ACTIVATION_AUTO_FIELDS['dragonsurvival:simple']
+            );
+            add(fields, ['activation_type']);
+        } else if (key === 'upgrade') {
+            const type = obj && obj.upgrade_type;
+            const fields = Object.assign(
+                { upgrade_type: 'dragonsurvival:experience_points' },
+                UPGRADE_AUTO_FIELDS[type] || UPGRADE_AUTO_FIELDS['dragonsurvival:experience_points']
+            );
+            add(fields, ['upgrade_type']);
+        } else if (key === 'actions.*') {
+            add({ target_selection: { target_type: 'dragonsurvival:self', applied_effects: { entity_effect: [], block_effect: [] } }, trigger_rate: 1, trigger_point: 'default' }, ['target_selection']);
+        } else if (key === 'actions.*.target_selection') {
+            const type = obj && obj.target_type;
+            const common = { target_type: 'dragonsurvival:self', applied_effects: { entity_effect: [], block_effect: [] } };
+            if (type === 'dragonsurvival:area') {
+                add(Object.assign(common, { radius: 1 }), ['target_type', 'applied_effects']);
+            } else if (type === 'dragonsurvival:dragon_breath') {
+                add(Object.assign(common, { range_multiplier: 1 }), ['target_type', 'applied_effects']);
+            } else if (type === 'dragonsurvival:looking_at') {
+                add(Object.assign(common, { range: 16 }), ['target_type', 'applied_effects']);
+            } else if (type === 'dragonsurvival:self') {
+                add(common, ['target_type', 'applied_effects']);
+            } else if (type === 'dragonsurvival:disc') {
+                add(Object.assign(common, { radius: 1, height: 1, height_starts_below: false }), ['target_type', 'applied_effects']);
+            } else {
+                add(Object.assign(common, { target_conditions: {}, targeting_mode: 'all' }), ['target_type', 'applied_effects']);
+            }
+        } else if (key === 'actions.*.target_selection.applied_effects') {
+            add({ entity_effect: [], block_effect: [], target_conditions: {}, targeting_mode: 'all' }, ['entity_effect', 'block_effect']);
+        } else if (key === 'actions.*.target_selection.applied_effects.entity_effect.*') {
+            const type = obj && obj.effect_type;
+            add(Object.assign({ effect_type: 'dragonsurvival:damage' }, ENTITY_EFFECT_OPTIONAL_FIELDS[type] || {}), ['effect_type']);
+        } else if (key === 'actions.*.target_selection.applied_effects.block_effect.*') {
+            const type = obj && obj.effect_type;
+            add(Object.assign({ effect_type: 'dragonsurvival:bonemeal' }, BLOCK_EFFECT_OPTIONAL_FIELDS[type] || {}), ['effect_type']);
+        } else {
+            const lastKey = path[path.length - 1];
+            if (lastKey === 'notification') {
+                add({ not_enough_mana: '', usage_blocked: '' });
+            } else if (lastKey === 'sound') {
+                add({ start: '', charging: '', looping: '', end: '' });
+            } else if (lastKey === 'animations') {
+                add({
+                    start_and_charging: { animation_key: '', layer: 'BASE', locks_neck: false, locks_tail: false },
+                    looping: { animation_key: '', layer: 'BASE', locks_neck: false, locks_tail: false },
+                    end: { animation_key: '', layer: 'BASE', locks_neck: false, locks_tail: false }
+                });
+            } else if (lastKey === 'potion') {
+                add({
+                    effects: [],
+                    amplifier: 0,
+                    duration: 0,
+                    probability: 1,
+                    effect_particles: false,
+                    show_icon: true
+                }, ['effects', 'amplifier', 'duration']);
+            } else if (lastKey === 'base') {
+                add({
+                    id: '',
+                    duration: 1,
+                    should_remove_automatically: false,
+                    early_removal_condition: {},
+                    custom_icon: '',
+                    is_hidden: false
+                }, ['id']);
+            } else if (lastKey === 'target_selection' && obj && obj.target_type) {
+                add({ applied_effects: { entity_effect: [], block_effect: [] } }, ['applied_effects']);
+            }
+        }
+
+        return { addable, required };
+    }
+
+    // ---- Dragon Species misc_resources 可选字段 ----
+
+    const SPECIES_MISC_RESOURCE_FIELDS = {
+        food_sprites: '',
+        mana_sprites: { full: '', reserved: '', recovery: '', empty: '' },
+        altar_banner: '',
+        ability_bar: '',
+        growth_left_arrow: { hover_icon: '', icon: '' },
+        growth_right_arrow: { hover_icon: '', icon: '' },
+        growth_crystal: { empty: '', full: '' },
+        food_tooltip: { font: '', nutrition_icon: '\\uEA01', saturation_icon: '\\uEA04' },
+        primary_color: '#FFFFFF',
+        secondary_color: '#FFFFFF',
+        claw_texture_slot: 'PICKAXE'
+    };
+
+    function getSpeciesSchema(path, obj) {
+        const key = pathKey(path);
+        if (key === 'misc_resources') {
+            return { addable: SPECIES_MISC_RESOURCE_FIELDS, required: [] };
+        }
+        if (key === 'misc_resources.mana_sprites') {
+            return { addable: { full: '', reserved: '', recovery: '', empty: '' }, required: [] };
+        }
+        if (key === 'misc_resources.growth_left_arrow' || key === 'misc_resources.growth_right_arrow') {
+            return { addable: { hover_icon: '', icon: '' }, required: [] };
+        }
+        if (key === 'misc_resources.growth_crystal') {
+            return { addable: { empty: '', full: '' }, required: [] };
+        }
+        if (key === 'misc_resources.food_tooltip') {
+            return { addable: { font: '', nutrition_icon: '\\uEA01', saturation_icon: '\\uEA04' }, required: [] };
+        }
+        return { addable: {}, required: [] };
+    }
+
+    function renderFieldPalette(path, obj, isProperties, isDietEntryRoot, extraAddable) {
         const encodedPath = encodeURIComponent(JSON.stringify(path));
         const buttons = [];
         const lastKey = path[path.length - 1];
@@ -1329,6 +1567,14 @@
             buttons.push(`<button class="add-field-btn" data-map-path="${encodedPath}" data-field-key="retain_effects" title="添加字段">＋ ${esc(OPTIONAL_FIELD_LABELS.retain_effects)}</button>`);
         }
 
+        if (extraAddable) {
+            for (const [field, def] of Object.entries(extraAddable)) {
+                if (!(field in obj)) {
+                    buttons.push(`<button class="add-field-btn" data-map-path="${encodedPath}" data-field-key="${esc(field)}" title="添加字段">＋ ${esc(FORM_KEY_LABELS[field] || OPTIONAL_FIELD_LABELS[field] || field)}</button>`);
+                }
+            }
+        }
+
         if (buttons.length === 0) {
             return '';
         }
@@ -1341,6 +1587,9 @@
 
 
     const FORM_KEY_LABELS = {
+        upgrade: '升级',
+        usage_blocked: '使用限制',
+        can_be_manually_disabled: '可手动禁用',
         target_selection: '目标选择',
         target_type: '目标类型',
         range_multiplier: '范围倍率',
@@ -1516,7 +1765,48 @@
         color_shift_rate: '颜色变化速率',
         particle_rate: '粒子速率',
         block_visions: '方块视野',
-        display_type: '显示类型'
+        display_type: '显示类型',
+        block_effect_type: '方块效果类型',
+        growth_type: '成长类型',
+        action_type: '操作类型',
+        adjustment_type: '调整类型',
+        experience_type: '经验类型',
+        cooldown_recovery_action_type: '冷却恢复类型',
+        categories: '效果类别',
+        valid_effects: '有效效果',
+        max_amount: '最大数量',
+        maximum_effect_level: '最大效果等级',
+        exclude_this: '排除自身',
+        abilities: '能力集合',
+        grants_experience: '给予经验',
+        item_predicate: '物品条件',
+        valid_blocks: '有效方块',
+        valid_entities: '有效实体',
+        tool: '工具',
+        power: '爆炸强度',
+        fire: '产生火焰',
+        delay: '延迟',
+        radius: '半径',
+        ignite_probability: '点燃概率',
+        conversion_data: '转换数据',
+        from_predicate: '源方块条件',
+        blocks_to: '目标方块',
+        state: '方块状态',
+        attempts: '尝试次数',
+        max_summons: '最大召唤数',
+        attribute_scales: '属性缩放',
+        nbt: 'NBT',
+        is_allied: '作为盟友',
+        drop_loot: '掉落战利品',
+        hunger_gain: '饥饿值增益',
+        saturation_gain: '饱和度增益',
+        maximum_saturation: '最大饱和度',
+        conversion_rate: '转换率',
+        growth_type: '成长类型',
+        action_type: '操作类型',
+        adjustment_type: '调整类型',
+        experience_type: '经验类型',
+        cooldown_recovery_action_type: '冷却恢复类型'
     };
 
     const ENUM_OPTIONS = {
@@ -1625,6 +1915,58 @@
             { value: 'dragonsurvival:item_used', label: '物品使用 Item Used' },
             { value: 'dragonsurvival:hit_by_projectile', label: '被投射物击中 Hit By Projectile' },
             { value: 'dragonsurvival:hit_by_water_potion', label: '被药水击中 Hit By Water Potion' }
+        ],
+        block_effect_type: [
+            { value: 'dragonsurvival:bonemeal', label: '骨粉 Bonemeal' },
+            { value: 'dragonsurvival:conversion', label: '方块转换 Conversion' },
+            { value: 'dragonsurvival:summon_entity', label: '召唤实体 Summon Entity' },
+            { value: 'dragonsurvival:fire', label: '点燃 Fire' },
+            { value: 'dragonsurvival:area_cloud', label: '药水云 Area Cloud' },
+            { value: 'dragonsurvival:block_break', label: '破坏方块 Block Break' },
+            { value: 'dragonsurvival:particle', label: '粒子 Particle' },
+            { value: 'dragonsurvival:run_function', label: '运行函数 Run Function' },
+            { value: 'dragonsurvival:use_item', label: '使用物品 Use Item' },
+            { value: 'dragonsurvival:explosion', label: '爆炸 Explosion' },
+            { value: 'dragonsurvival:block_harvest', label: '方块采集 Block Harvest' }
+        ],
+        growth_type: [
+            { value: 'set', label: '设置 Set' },
+            { value: 'add', label: '相加 Add' }
+        ],
+        action_type: [
+            { value: 'set', label: '设置 Set' },
+            { value: 'add', label: '相加 Add' },
+            { value: 'reduce', label: '减少 Reduce' }
+        ],
+        adjustment_type: [
+            { value: 'percent', label: '百分比 Percent' },
+            { value: 'flat', label: '数值 Flat' }
+        ],
+        experience_type: [
+            { value: 'levels', label: '等级 Levels' },
+            { value: 'points', label: '经验点 Points' }
+        ],
+        cooldown_recovery_action_type: [
+            { value: 'set', label: '设置 Set' },
+            { value: 'reduce', label: '减少 Reduce' }
+        ],
+        categories: [
+            { value: 'BENEFICIAL', label: '有益 BENEFICIAL' },
+            { value: 'HARMFUL', label: '有害 HARMFUL' },
+            { value: 'NEUTRAL', label: '中性 NEUTRAL' }
+        ],
+        tier: [
+            { value: 'WOOD', label: '木 Wood' },
+            { value: 'STONE', label: '石 Stone' },
+            { value: 'IRON', label: '铁 Iron' },
+            { value: 'DIAMOND', label: '钻石 Diamond' },
+            { value: 'GOLD', label: '金 Gold' },
+            { value: 'NETHERITE', label: '下界合金 Netherite' }
+        ],
+        layer: [
+            { value: 'BASE', label: '基础 BASE' },
+            { value: 'BREATH', label: '吐息 BREATH' },
+            { value: 'BITE', label: '撕咬 BITE' }
         ]
     };
 
@@ -1939,6 +2281,16 @@
         if (lastKey === 'block_effect') {
             return { effect_type: '' };
         }
+        if (lastKey === 'actions') {
+            return {
+                target_selection: {
+                    target_type: 'dragonsurvival:self',
+                    applied_effects: { entity_effect: [], block_effect: [] }
+                },
+                trigger_point: 'default',
+                trigger_rate: 0
+            };
+        }
         if (lastKey === 'ticking_effects') {
             return {
                 general_data: { effects: [] },
@@ -1993,6 +2345,9 @@
                     probability: 1.0
                 };
             }
+            if (path.includes('potion')) {
+                return '';
+            }
             return {
                 effect: '',
                 duration: 0
@@ -2020,6 +2375,42 @@
                 },
                 retain_effects: false
             };
+        }
+        if (lastKey === 'conditions') {
+            return { condition: 'minecraft:random_chance', chance: 0.5 };
+        }
+        if (lastKey === 'items_per_level' || lastKey === 'valid_effects' || lastKey === 'categories') {
+            return '';
+        }
+        if (lastKey === 'conversion_data') {
+            return { from_predicate: {}, blocks_to: [] };
+        }
+        if (lastKey === 'item_conversions') {
+            return { item_predicate: {}, items_to: [] };
+        }
+        if (lastKey === 'items_to') {
+            return { item: '', weight: 1 };
+        }
+        if (lastKey === 'blocks_to') {
+            return { state: {}, weight: 1 };
+        }
+        if (lastKey === 'attribute_scales') {
+            return { attributes: '', scale: 1 };
+        }
+        if (lastKey === 'harvest_bonuses') {
+            return { base: {}, blocks: '', base_speed: { tiers: [] }, harvest_bonus: 1, break_speed_multiplier: 0 };
+        }
+        if (lastKey === 'glows') {
+            return { base: {}, color: '#ffffff' };
+        }
+        if (lastKey === 'bonuses') {
+            return { base: {}, oxygen_bonus: 1 };
+        }
+        if (lastKey === 'block_visions') {
+            return { base: {}, range: 10, display_type: 'outline', colors: [] };
+        }
+        if (lastKey === 'tiers') {
+            return { tier: 'WOOD', from_level: 0 };
         }
 
         return {};
@@ -2160,7 +2551,31 @@
 
         if (field === 'effect_type') {
             const obj = getAtPath(currentDetail.data || {}, path.slice(0, -1));
-            const template = EFFECT_AUTO_FIELDS[value];
+            const template = path.includes('block_effect') ? BLOCK_EFFECT_AUTO_FIELDS[value] : EFFECT_AUTO_FIELDS[value];
+            if (obj && template && typeof obj === 'object' && !Array.isArray(obj)) {
+                for (const [key, def] of Object.entries(template)) {
+                    if (!Object.prototype.hasOwnProperty.call(obj, key)) {
+                        obj[key] = JSON.parse(JSON.stringify(def));
+                    }
+                }
+            }
+        }
+
+        if (field === 'activation_type') {
+            const obj = getAtPath(currentDetail.data || {}, path.slice(0, -1));
+            const template = ACTIVATION_AUTO_FIELDS[value];
+            if (obj && template && typeof obj === 'object' && !Array.isArray(obj)) {
+                for (const [key, def] of Object.entries(template)) {
+                    if (!Object.prototype.hasOwnProperty.call(obj, key)) {
+                        obj[key] = JSON.parse(JSON.stringify(def));
+                    }
+                }
+            }
+        }
+
+        if (field === 'upgrade_type') {
+            const obj = getAtPath(currentDetail.data || {}, path.slice(0, -1));
+            const template = UPGRADE_AUTO_FIELDS[value];
             if (obj && template && typeof obj === 'object' && !Array.isArray(obj)) {
                 for (const [key, def] of Object.entries(template)) {
                     if (!Object.prototype.hasOwnProperty.call(obj, key)) {
@@ -2332,7 +2747,7 @@
         if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
         if (Object.prototype.hasOwnProperty.call(obj, field)) return;
 
-        obj[field] = getFieldDefault(field);
+        obj[field] = getFieldDefault(field, path);
         renderDetail(currentDetail);
         saveCurrentDetail();
     }
@@ -2347,7 +2762,16 @@
         saveCurrentDetail();
     }
 
-    function getFieldDefault(field) {
+    function getFieldDefault(field, path) {
+        const obj = getAtPath((currentDetail && currentDetail.data) || {}, path || []);
+        const schema = currentDetail && currentDetail.kind === 'dragon_ability'
+            ? getAbilitySchema(path || [], obj)
+            : currentDetail && currentDetail.kind === 'dragon_species'
+                ? getSpeciesSchema(path || [], obj)
+                : null;
+        if (schema && Object.prototype.hasOwnProperty.call(schema.addable, field)) {
+            return JSON.parse(JSON.stringify(schema.addable[field]));
+        }
         if (field === 'retain_effects') {
             return false;
         }

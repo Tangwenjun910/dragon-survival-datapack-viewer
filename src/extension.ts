@@ -73,28 +73,34 @@ async function refresh(): Promise<void> {
         }
     }
 
+    const files = [...fileMap.values()];
+    let assets: AssetNamespace[] = [];
+    try {
+        assets = await collectAssets();
+    } catch (error) {
+        console.error('Failed to collect assets:', error);
+    }
 
-}
-
-async function selectDatapack(context: vscode.ExtensionContext): Promise<void> {
-    const picked = await vscode.window.showOpenDialog({
-        canSelectFiles: false,
-        canSelectFolders: true,
-        canSelectMany: false,
-        openLabel: '选择数据包/模组源码目录',
-        title: '选择包含 data 目录的龙之生存数据包或模组源码'
-    });
-
-    if (!picked || picked.length === 0) {
+    if (files.length === 0) {
+        currentModel = { roots: [], namespaces: [], assets, errors: [] };
+        provider?.setModel(currentModel);
         return;
     }
 
-    manualPath = picked[0].fsPath;
-    await context.globalState.update('dragonSurvivalDatapack.manualPath', manualPath);
-    await refresh();
-}
+    let model: DSModel;
+    try {
+        model = await loadModel(files);
+    } catch (error) {
+        currentModel = { roots: [], namespaces: [], assets, errors: [{ filePath: '', message: String(error) }] };
+        vscode.window.showErrorMessage(`解析数据包失败: ${error instanceof Error ? error.message : String(error)}`);
+        provider?.setModel(currentModel);
+        return;
+    }
 
-async function saveFile(filePath: string, text: string): Promise<void> {
+    model.assets = assets;
+    currentModel = model;
+    provider?.setModel(model);
+}
 
 async function collectAssets(): Promise<AssetNamespace[]> {
     const dirs = new Set<string>();
@@ -119,6 +125,25 @@ async function collectAssets(): Promise<AssetNamespace[]> {
     return result;
 }
 
+async function selectDatapack(context: vscode.ExtensionContext): Promise<void> {
+    const picked = await vscode.window.showOpenDialog({
+        canSelectFiles: false,
+        canSelectFolders: true,
+        canSelectMany: false,
+        openLabel: '选择数据包/模组源码目录',
+        title: '选择包含 data 目录的龙之生存数据包或模组源码'
+    });
+
+    if (!picked || picked.length === 0) {
+        return;
+    }
+
+    manualPath = picked[0].fsPath;
+    await context.globalState.update('dragonSurvivalDatapack.manualPath', manualPath);
+    await refresh();
+}
+
+async function saveFile(filePath: string, text: string): Promise<void> {
     try {
         const parsed = parseJsonc<unknown>(text);
         const formatted = JSON.stringify(parsed, null, 2);
@@ -133,7 +158,7 @@ async function collectAssets(): Promise<AssetNamespace[]> {
 async function openFile(filePath: string): Promise<void> {
     try {
         const document = await vscode.workspace.openTextDocument(vscode.Uri.file(filePath));
-        await vscode.window.showTextDocument(document, { preview: true });
+        await vscode.window.showTextDocument(document, { preview: true, preserveFocus: true });
     } catch (error) {
         vscode.window.showErrorMessage(`无法打开文件: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -184,7 +209,7 @@ async function addFile(kind: RegistryKind, namespace: string): Promise<void> {
         }
         return;
     } catch {
-        // File does not exist yet - this is expected.
+        // File does not exist yet - expected.
     }
 
     const content = buildDefaultTemplate(kind, namespace, safeId);
@@ -205,6 +230,26 @@ async function addFile(kind: RegistryKind, namespace: string): Promise<void> {
         await refresh();
     } catch (error) {
         vscode.window.showErrorMessage(`创建文件失败: ${error instanceof Error ? error.message : String(error)}`);
+    }
+}
+
+async function deleteFile(filePath: string): Promise<void> {
+    const answer = await vscode.window.showWarningMessage(
+        `确定要删除这个文件吗？\n${filePath}`,
+        { modal: true },
+        '删除'
+    );
+
+    if (answer !== '删除') {
+        return;
+    }
+
+    try {
+        await vscode.workspace.fs.delete(vscode.Uri.file(filePath));
+        vscode.window.showInformationMessage(`已删除 ${filePath}`);
+        await refresh();
+    } catch (error) {
+        vscode.window.showErrorMessage(`删除文件失败: ${error instanceof Error ? error.message : String(error)}`);
     }
 }
 
@@ -231,7 +276,7 @@ async function createSpeciesCompanionFiles(namespace: string, speciesId: string,
             }
             data.values = data.values || {};
         } catch {
-            // File does not exist yet - create it from scratch.
+            // File does not exist yet - create from scratch.
         }
 
         update(data.values);
@@ -252,10 +297,7 @@ async function createSpeciesCompanionFiles(namespace: string, speciesId: string,
 
     await updateDataMap('dragon_species', 'end_platforms', (values) => {
         if (!values[speciesFull]) {
-            values[speciesFull] = {
-                structure: '',
-                spawn_position: [0, 50, 0]
-            };
+            values[speciesFull] = { structure: '', spawn_position: [0, 50, 0] };
         }
     });
 
@@ -263,19 +305,14 @@ async function createSpeciesCompanionFiles(namespace: string, speciesId: string,
         if (!values[speciesFull]) {
             values[speciesFull] = {
                 effects: [],
-                payment_data: {
-                    duration_multiplier: 30,
-                    experience_cost: 60
-                }
+                payment_data: { duration_multiplier: 30, experience_cost: 60 }
             };
         }
     });
 
     await updateDataMap('dragon_body', 'body_icons', (values) => {
         const defaultBodyKeys = ['center', 'north', 'east', 'south', 'west', 'no_model'];
-        const bodyKeys = Object.keys(values).length > 0
-            ? Object.keys(values)
-            : defaultBodyKeys;
+        const bodyKeys = Object.keys(values).length > 0 ? Object.keys(values) : defaultBodyKeys;
 
         for (const bodyKey of bodyKeys) {
             if (!values[bodyKey]) {
@@ -290,21 +327,15 @@ async function createSpeciesCompanionFiles(namespace: string, speciesId: string,
         }
     });
 
-    // 龙种引用的能力/惩罚 tag 列表也要创建，否则 species 里的 "#namespace:id" 会找不到。
-    const createTagFile = async (
-        registry: string,
-        tagId: string,
-        values: unknown[]
-    ): Promise<void> => {
+    const createTagFile = async (registry: string, tagId: string, values: unknown[]): Promise<void> => {
         const filePath = path.join(dataDir, 'tags', 'dragonsurvival', registry, `${tagId}.json`);
         const fileUri = vscode.Uri.file(filePath);
 
         try {
             await vscode.workspace.fs.stat(fileUri);
-            // Already exists - keep it.
             return;
         } catch {
-            // Doesn't exist - create it.
+            // Does not exist - create it.
         }
 
         await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(filePath)));
@@ -326,25 +357,17 @@ async function addAbilityToTags(namespace: string, abilityId: string): Promise<v
         try {
             const existing = await vscode.workspace.fs.readFile(fileUri);
             data = parseJsonc(Buffer.from(existing).toString('utf-8')) as Record<string, any>;
-            if (!data || typeof data !== 'object') {
-                data = { values: [] };
-            }
+            if (!data || typeof data !== 'object') data = { values: [] };
         } catch {
             await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(filePath)));
         }
 
-        if (!Array.isArray(data.values)) {
-            data.values = [];
-        }
-
-        if (!data.values.includes(value)) {
-            data.values.push(value);
-        }
+        if (!Array.isArray(data.values)) data.values = [];
+        if (!data.values.includes(value)) data.values.push(value);
 
         await vscode.workspace.fs.writeFile(fileUri, Buffer.from(JSON.stringify(data, null, 2), 'utf-8'));
     };
 
-    // 1. Add to the species ability tags in the same namespace (e.g. star_dragon:star_dragon).
     const sameNamespace = currentModel?.namespaces.find(ns => ns.namespace === namespace);
     const sameNamespaceAbilityTags = (sameNamespace?.tags || []).filter(tag =>
         tag.registry === 'dragon_ability' && tag.id !== 'order'
@@ -354,7 +377,6 @@ async function addAbilityToTags(namespace: string, abilityId: string): Promise<v
         await appendToTagFile(tag.filePath, abilityFull);
     }
 
-    // 2. Add to the global order tag (usually in the dragonsurvival namespace).
     const orderTag = currentModel?.namespaces.flatMap(ns => ns.tags).find(tag =>
         tag.registry === 'dragon_ability' && tag.id === 'order'
     );
@@ -382,25 +404,17 @@ async function addPenaltyToTags(namespace: string, penaltyId: string): Promise<v
         try {
             const existing = await vscode.workspace.fs.readFile(fileUri);
             data = parseJsonc(Buffer.from(existing).toString('utf-8')) as Record<string, any>;
-            if (!data || typeof data !== 'object') {
-                data = { values: [] };
-            }
+            if (!data || typeof data !== 'object') data = { values: [] };
         } catch {
             await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(filePath)));
         }
 
-        if (!Array.isArray(data.values)) {
-            data.values = [];
-        }
-
-        if (!data.values.includes(value)) {
-            data.values.push(value);
-        }
+        if (!Array.isArray(data.values)) data.values = [];
+        if (!data.values.includes(value)) data.values.push(value);
 
         await vscode.workspace.fs.writeFile(fileUri, Buffer.from(JSON.stringify(data, null, 2), 'utf-8'));
     };
 
-    // 1. Add to the species penalty tags in the same namespace.
     const sameNamespace = currentModel?.namespaces.find(ns => ns.namespace === namespace);
     const sameNamespacePenaltyTags = (sameNamespace?.tags || []).filter(tag =>
         tag.registry === 'dragon_penalty' && tag.id !== 'order'
@@ -410,7 +424,6 @@ async function addPenaltyToTags(namespace: string, penaltyId: string): Promise<v
         await appendToTagFile(tag.filePath, penaltyFull);
     }
 
-    // 2. Add to the global penalty order tag if it exists.
     const orderTag = currentModel?.namespaces.flatMap(ns => ns.tags).find(tag =>
         tag.registry === 'dragon_penalty' && tag.id === 'order'
     );
@@ -428,37 +441,14 @@ async function addPenaltyToTags(namespace: string, penaltyId: string): Promise<v
     }
 }
 
-
 function getNamespaceDataDir(namespace: string): string | undefined {
     const ns = currentModel?.namespaces.find(item => item.namespace === namespace);
     const firstEntry = ns?.entries[0];
-    if (!firstEntry) {
-        return undefined;
-    }
+    if (!firstEntry) return undefined;
 
     const registryDir = path.dirname(firstEntry.filePath);
     const dsDir = path.dirname(registryDir);
     return path.dirname(dsDir);
-}
-
-async function deleteFile(filePath: string): Promise<void> {
-    const answer = await vscode.window.showWarningMessage(
-        `确定要删除这个文件吗？\n${filePath}`,
-        { modal: true },
-        '删除'
-    );
-
-    if (answer !== '删除') {
-        return;
-    }
-
-    try {
-        await vscode.workspace.fs.delete(vscode.Uri.file(filePath));
-        vscode.window.showInformationMessage(`已删除 ${filePath}`);
-        await refresh();
-    } catch (error) {
-        vscode.window.showErrorMessage(`删除文件失败: ${error instanceof Error ? error.message : String(error)}`);
-    }
 }
 
 async function findDataSurvivalDir(namespace: string): Promise<string | undefined> {
@@ -466,17 +456,13 @@ async function findDataSurvivalDir(namespace: string): Promise<string | undefine
         const ns = currentModel.namespaces.find(item => item.namespace === namespace);
         const firstEntry = ns?.entries[0];
         if (firstEntry) {
-            // firstEntry.filePath ends in <namespace>/dragonsurvival/<registry>/<file>.json
             const registryDir = path.dirname(firstEntry.filePath);
             return path.dirname(registryDir);
         }
     }
 
-    // Blank project: try to find an existing data/resources/src directory first.
     const basePath = getBasePath();
-    if (!basePath) {
-        return undefined;
-    }
+    if (!basePath) return undefined;
 
     const bestDataDir = await findBestDataDir(basePath);
     return path.join(bestDataDir, namespace, 'dragonsurvival');
@@ -503,9 +489,7 @@ async function findBestDataDir(basePath: string): Promise<string> {
             for (const entry of entries) {
                 if (!entry.isDirectory() || skip.has(entry.name)) continue;
                 const full = path.join(current.dir, entry.name);
-                if (entry.name === name) {
-                    return full;
-                }
+                if (entry.name === name) return full;
                 queue.push({ dir: full, depth: current.depth + 1 });
             }
         }
@@ -513,28 +497,19 @@ async function findBestDataDir(basePath: string): Promise<string> {
     };
 
     const dataDir = await findDir('data');
-    if (dataDir) {
-        return dataDir;
-    }
+    if (dataDir) return dataDir;
 
     const resourcesDir = await findDir('resources');
-    if (resourcesDir) {
-        return path.join(resourcesDir, 'data');
-    }
+    if (resourcesDir) return path.join(resourcesDir, 'data');
 
     const srcDir = await findDir('src');
-    if (srcDir) {
-        return path.join(srcDir, 'main', 'resources', 'data');
-    }
+    if (srcDir) return path.join(srcDir, 'main', 'resources', 'data');
 
     return path.join(basePath, 'data');
 }
 
 function getBasePath(): string | undefined {
-    if (manualPath) {
-        return manualPath;
-    }
-
+    if (manualPath) return manualPath;
     const firstFolder = vscode.workspace.workspaceFolders?.[0];
     return firstFolder?.uri.fsPath;
 }
@@ -560,15 +535,10 @@ function buildDefaultTemplate(kind: RegistryKind, namespace: string, id: string)
             };
         case 'dragon_ability':
             return {
-                activation: {
-                    activation_type: 'dragonsurvival:simple'
-                },
+                activation: { activation_type: 'dragonsurvival:simple' },
                 icon: {
                     texture_entries: [
-                        {
-                            from_level: 0,
-                            texture_resource: `${namespace}:abilities/${id}`
-                        }
+                        { from_level: 0, texture_resource: `${namespace}:abilities/${id}` }
                     ]
                 },
                 actions: []
@@ -597,16 +567,10 @@ function buildDefaultTemplate(kind: RegistryKind, namespace: string, id: string)
                     ticking_effects: []
                 },
                 type_data: {
-                    behaviour_data: {
-                        width: 0.5,
-                        height: 0.5
-                    },
+                    behaviour_data: { width: 0.5, height: 0.5 },
                     resources: {
                         texture_entries: [
-                            {
-                                from_level: 1,
-                                texture_resource: `${namespace}:${id}`
-                            }
+                            { from_level: 1, texture_resource: `${namespace}:${id}` }
                         ]
                     },
                     on_destroy_effects: []
@@ -617,23 +581,15 @@ function buildDefaultTemplate(kind: RegistryKind, namespace: string, id: string)
                 animation: `${namespace}:${id}`,
                 is_default: false,
                 modifiers: [],
-                scaling_proportions: {
-                    width: 0.6,
-                    height: 2.0,
-                    eye_height: 1.8
-                }
+                scaling_proportions: { width: 0.6, height: 2.0, eye_height: 1.8 }
             };
         case 'dragon_emote_set':
-            return {
-                emotes: []
-            };
+            return { emotes: [] };
         case 'diet_entries':
         case 'stage_resources':
         case 'end_platforms':
         case 'dragon_beacon_data':
         case 'body_icons':
-            return {
-                values: {}
-            };
+            return { values: {} };
     }
 }

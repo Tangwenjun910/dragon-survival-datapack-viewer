@@ -116,6 +116,42 @@
         return currentLang === 'zh' ? zh : en;
     }
 
+    const KIND_LABELS_ZH = {
+        dragon_species: '龙种',
+        dragon_stage: '阶段',
+        dragon_ability: '能力',
+        dragon_penalty: '惩罚',
+        projectile_data: '弹射物',
+        dragon_body: '龙体',
+        dragon_emote_set: '表情组',
+        diet_entries: '食物列表',
+        stage_resources: '阶段资源',
+        end_platforms: '末地平台',
+        dragon_beacon_data: '祭坛/信标效果',
+        body_icons: '龙体图标'
+    };
+
+    const KIND_LABELS_EN = {
+        dragon_species: 'Species',
+        dragon_stage: 'Stage',
+        dragon_ability: 'Ability',
+        dragon_penalty: 'Penalty',
+        projectile_data: 'Projectile',
+        dragon_body: 'Body',
+        dragon_emote_set: 'Emote Set',
+        diet_entries: 'Diet Entries',
+        stage_resources: 'Stage Resources',
+        end_platforms: 'End Platforms',
+        dragon_beacon_data: 'Altar/Beacon Effects',
+        body_icons: 'Body Icons'
+    };
+
+    function kindLabel(kind) {
+        const dict = currentLang === 'zh' ? KIND_LABELS_ZH : KIND_LABELS_EN;
+        return dict[kind] || kind;
+    }
+
+
 
 
     const $ = (id) => document.getElementById(id);

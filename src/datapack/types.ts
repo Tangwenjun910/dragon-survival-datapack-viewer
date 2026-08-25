@@ -78,9 +78,27 @@ export interface FileError {
     message: string;
 }
 
+export interface AssetFile {
+    namespace: string;
+    category: string;
+    filePath: string;
+    relativePath: string;
+}
+
+export interface AssetNamespace {
+    namespace: string;
+    totalFiles: number;
+    categories: {
+        name: string;
+        fileCount: number;
+        files: AssetFile[];
+    }[];
+}
+
 export interface DSModel {
     roots: string[];
     namespaces: NamespaceModel[];
+    assets: AssetNamespace[];
     errors: FileError[];
 }
 

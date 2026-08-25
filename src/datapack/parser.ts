@@ -92,6 +92,7 @@ export async function loadModel(files: DiscoveredFile[]): Promise<DSModel> {
     return {
         roots: [...roots],
         namespaces,
+        assets: [],
         errors
     };
 }

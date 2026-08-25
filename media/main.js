@@ -68,6 +68,13 @@
                 return;
             }
 
+            const assetOpenBtn = target.closest('.asset-file-open');
+            if (assetOpenBtn) {
+                const filePath = decodeURIComponent(assetOpenBtn.getAttribute('data-file-path') || '');
+                if (filePath) send({ type: 'openFile', filePath });
+                return;
+            }
+
             const card = target.closest('[data-kind]');
             if (card) {
                 const kind = card.getAttribute('data-kind');
@@ -401,6 +408,14 @@
         html += globalTags.length ? `<div class="card-grid">${globalTags.map(tag => renderTagCard(tag)).join('')}</div>` : '<div class="empty-state">暂无标签</div>';
 
 
+        // Resource pack (assets)
+        const assetNamespaces = state.model.assets || [];
+        html += `<div class="section-title">📦 资源包 (${assetNamespaces.length} 个命名空间)</div>`;
+        html += assetNamespaces.length
+            ? `<div class="card-grid">${assetNamespaces.map(nsAsset => renderAssetNamespaceCard(nsAsset)).join('')}</div>`
+            : '<div class="empty-state">未发现 assets 资源目录</div>';
+
+
 
         if (state.model.errors && state.model.errors.length > 0) {
             html += `<div class="section-title">⚠️ 解析错误 (${state.model.errors.length})</div>`;
@@ -435,6 +450,27 @@
                 <button class="edit-tag-btn back-button" data-tag-file="${encodeURIComponent(tag.filePath)}" data-tag-values="${encodeURIComponent(JSON.stringify(tag.values || []))}" style="margin-top: 6px">编辑</button>
             </div>`;
     }
+
+    function renderAssetNamespaceCard(nsAsset) {
+        return `
+            <div class="card">
+                <div class="card-header">
+                    <span class="card-title">📦 ${esc(nsAsset.namespace)}</span>
+                    <span class="badge">${nsAsset.totalFiles} 文件</span>
+                </div>
+                ${nsAsset.categories.map(cat => `
+                    <details class="asset-category">
+                        <summary>${esc(cat.name)} (${cat.fileCount})</summary>
+                        <div class="asset-file-list">
+                            ${cat.files.slice(0, 20).map(file => `
+                                <button class="asset-file-open back-button" data-file-path="${encodeURIComponent(file.filePath)}" title="打开文件">${esc(file.relativePath)}</button>
+                            `).join('')}
+                            ${cat.files.length > 20 ? `<div class="card-subtitle">还有 ${cat.files.length - 20} 个文件</div>` : ''}
+                        </div>
+                    </details>`).join('')}
+            </div>`;
+    }
+
 
 
     function renderEntryGrid(entries, cardRenderer) {

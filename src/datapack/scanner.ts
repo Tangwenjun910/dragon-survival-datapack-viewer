@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as fsp from 'fs/promises';
 import * as path from 'path';
-import { DATA_MAP_KINDS, DiscoveredFile, isRegistryKind, RegistryKind } from './types';
+import { AssetFile, AssetNamespace, DATA_MAP_KINDS, DiscoveredFile, isRegistryKind, RegistryKind } from './types';
 
 const SKIP_DIRS = new Set([
     'node_modules',
@@ -246,6 +246,112 @@ export async function scanDirectory(searchRoot: string): Promise<DiscoveredFile[
 
     return files;
 }
+
+/** Find directories named `assets` that contain namespace subfolders. */
+export async function findAssetDirectories(searchRoot: string, maxDepth = 8): Promise<string[]> {
+    const result: string[] = [];
+
+    async function walk(dir: string, depth: number): Promise<void> {
+        if (depth > maxDepth) return;
+
+        let entries: fs.Dirent[];
+        try {
+            entries = await fsp.readdir(dir, { withFileTypes: true });
+        } catch {
+            return;
+        }
+
+        for (const entry of entries) {
+            if (!entry.isDirectory() || SKIP_DIRS.has(entry.name)) continue;
+            const full = path.join(dir, entry.name);
+
+            if (entry.name === 'assets') {
+                result.push(full);
+                continue;
+            }
+
+            await walk(full, depth + 1);
+        }
+    }
+
+    await walk(searchRoot, 0);
+    return result;
+}
+
+/** Scan a single `assets` directory into namespaces/categories/files. */
+export async function scanAssetsDirectory(assetsDir: string): Promise<AssetNamespace[]> {
+    const namespaces: AssetNamespace[] = [];
+    let nsEntries: fs.Dirent[];
+
+    try {
+        nsEntries = await fsp.readdir(assetsDir, { withFileTypes: true });
+    } catch {
+        return namespaces;
+    }
+
+    for (const ns of nsEntries) {
+        if (!ns.isDirectory()) continue;
+
+        const nsPath = path.join(assetsDir, ns.name);
+        const categories: AssetNamespace['categories'] = [];
+        let totalFiles = 0;
+
+        let categoryEntries: fs.Dirent[];
+        try {
+            categoryEntries = await fsp.readdir(nsPath, { withFileTypes: true });
+        } catch {
+            continue;
+        }
+
+        for (const category of categoryEntries) {
+            if (!category.isDirectory()) continue;
+
+            const catPath = path.join(nsPath, category.name);
+            const files: AssetFile[] = [];
+            await collectAssetFiles(catPath, ns.name, category.name, catPath, files);
+            categories.push({
+                name: category.name,
+                fileCount: files.length,
+                files
+            });
+            totalFiles += files.length;
+        }
+
+        namespaces.push({ namespace: ns.name, totalFiles, categories });
+    }
+
+    return namespaces;
+}
+
+async function collectAssetFiles(
+    dir: string,
+    namespace: string,
+    category: string,
+    rootCategory: string,
+    output: AssetFile[]
+): Promise<void> {
+    let entries: fs.Dirent[];
+    try {
+        entries = await fsp.readdir(dir, { withFileTypes: true });
+    } catch {
+        return;
+    }
+
+    for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            await collectAssetFiles(full, namespace, category, rootCategory, output);
+        } else if (entry.isFile()) {
+            output.push({
+                namespace,
+                category,
+                filePath: full,
+                relativePath: path.relative(rootCategory, full)
+            });
+        }
+    }
+}
+
 
 /** Determine datapack root labels for display from a list of data directories. */
 export function getRootLabels(dataDirs: string[]): string[] {

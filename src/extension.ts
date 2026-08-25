@@ -2,8 +2,8 @@ import * as path from 'path';
 import * as fsp from 'fs/promises';
 import * as vscode from 'vscode';
 import { DragonDataProvider } from './DragonDataProvider';
-import { DATA_MAP_KINDS, DiscoveredFile, DSModel, RegistryKind } from './datapack/types';
-import { scanDirectory } from './datapack/scanner';
+import { AssetNamespace, DATA_MAP_KINDS, DiscoveredFile, DSModel, RegistryKind } from './datapack/types';
+import { findAssetDirectories, scanAssetsDirectory, scanDirectory } from './datapack/scanner';
 import { loadModel } from './datapack/parser';
 import { parseJsonc } from './datapack/jsonc';
 import { discoverInWorkspace } from './workspaceScanner';
@@ -73,26 +73,7 @@ async function refresh(): Promise<void> {
         }
     }
 
-    const files = [...fileMap.values()];
 
-    if (files.length === 0) {
-        currentModel = { roots: [], namespaces: [], errors: [] };
-        provider?.setModel(currentModel);
-        return;
-    }
-
-    let model: DSModel;
-    try {
-        model = await loadModel(files);
-    } catch (error) {
-        currentModel = { roots: [], namespaces: [], errors: [{ filePath: '', message: String(error) }] };
-        vscode.window.showErrorMessage(`解析数据包失败: ${error instanceof Error ? error.message : String(error)}`);
-        provider?.setModel(currentModel);
-        return;
-    }
-
-    currentModel = model;
-    provider?.setModel(model);
 }
 
 async function selectDatapack(context: vscode.ExtensionContext): Promise<void> {
@@ -114,6 +95,30 @@ async function selectDatapack(context: vscode.ExtensionContext): Promise<void> {
 }
 
 async function saveFile(filePath: string, text: string): Promise<void> {
+
+async function collectAssets(): Promise<AssetNamespace[]> {
+    const dirs = new Set<string>();
+    const folders = vscode.workspace.workspaceFolders ?? [];
+
+    for (const folder of folders) {
+        for (const dir of await findAssetDirectories(folder.uri.fsPath)) {
+            dirs.add(dir);
+        }
+    }
+
+    if (manualPath) {
+        for (const dir of await findAssetDirectories(manualPath)) {
+            dirs.add(dir);
+        }
+    }
+
+    const result: AssetNamespace[] = [];
+    for (const dir of dirs) {
+        result.push(...await scanAssetsDirectory(dir));
+    }
+    return result;
+}
+
     try {
         const parsed = parseJsonc<unknown>(text);
         const formatted = JSON.stringify(parsed, null, 2);

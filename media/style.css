@@ -709,6 +709,34 @@ table {
     white-space: nowrap;
 }
 
+.asset-category {
+    margin: 4px 0;
+}
+
+.asset-file-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.asset-file-open {
+    text-align: left;
+    width: 100%;
+    background: var(--vscode-input-background, #3c3c3c);
+    color: var(--vscode-input-foreground, #cccccc);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 11px;
+    cursor: pointer;
+    word-break: break-all;
+}
+
+.asset-file-open:hover {
+    border-color: var(--accent);
+}
+
 th, td {
     border: 1px solid var(--border);
     padding: 4px 8px;

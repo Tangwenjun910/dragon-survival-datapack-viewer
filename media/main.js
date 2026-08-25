@@ -603,12 +603,6 @@
         const primaryColor = colors.primary_color || '#FFFFFF';
         const secondaryColor = colors.secondary_color || '#FFFFFF';
 
-        const infoItems = [
-            ['能力槽纹理', colors.ability_bar || ''],
-            ['祭坛横幅', colors.altar_banner || ''],
-            ['食物图标', colors.food_sprites || '']
-        ].filter(item => item[1]).map(([k, v]) => `<div class="info-item"><div class="info-label">${esc(k)}</div><div class="info-value">${esc(v)}</div></div>`).join('');
-
         return `
             <div class="section-title">食物悬浮框颜色</div>
             <div class="color-edit-grid">
@@ -628,7 +622,13 @@
                 </label>
             </div>
             <button id="saveColorBtn" class="back-button primary">保存颜色</button>
-            <div class="info-grid">${infoItems}</div>
+
+            <div class="section-title">🐲 龙种引用</div>
+            <div class="ability-editor">${renderStructuredForm({ abilities: d.abilities, penalties: d.penalties }, 0, [])}</div>
+
+            <div class="section-title">🎨 misc_resources 全部字段</div>
+            <div class="ability-editor">${renderStructuredForm(d.misc_resources || {}, 0, ['misc_resources'])}</div>
+
             <div class="section-title">阶段链</div>
             <div class="flow">
                 ${stages.length ? stages.map((stage, i) => {

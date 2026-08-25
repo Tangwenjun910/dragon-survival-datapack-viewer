@@ -141,28 +141,42 @@ async function addFile(kind: RegistryKind, namespace: string): Promise<void> {
         return;
     }
 
-    const id = await vscode.window.showInputBox({
-        prompt: `输入新的 ${kind} 文件名（不需要 .json）`,
-        value: `new_${kind.replace('dragon_', '').replace('_data', '')}`
-    });
+    const isDataMap = (DATA_MAP_KINDS as readonly string[]).includes(kind);
+    let safeId: string;
 
-    if (!id) {
-        return;
+    if (isDataMap) {
+        // Data-map files have fixed names (e.g. body_icons.json, diet_entries.json).
+        safeId = kind;
+    } else {
+        const id = await vscode.window.showInputBox({
+            prompt: `输入新的 ${kind} 文件名（不需要 .json）`,
+            value: `new_${kind.replace('dragon_', '').replace('_data', '')}`
+        });
+
+        if (!id) {
+            return;
+        }
+
+        safeId = id.trim().replace(/[^a-zA-Z0-9_.-]/g, '_');
     }
 
-    const safeId = id.trim().replace(/[^a-zA-Z0-9_.-]/g, '_');
     let targetDir: string;
-    if ((DATA_MAP_KINDS as readonly string[]).includes(kind)) {
+    if (isDataMap) {
         const dataMapTarget = kind === 'body_icons' ? 'dragon_body' : 'dragon_species';
         targetDir = path.join(path.dirname(dataSurvivalDir), 'data_maps', 'dragonsurvival', dataMapTarget);
     } else {
         targetDir = path.join(dataSurvivalDir, kind);
     }
+
     const targetPath = path.join(targetDir, `${safeId}.json`);
 
     try {
         await vscode.workspace.fs.stat(vscode.Uri.file(targetPath));
-        vscode.window.showErrorMessage(`文件已存在: ${targetPath}`);
+        if (isDataMap) {
+            vscode.window.showInformationMessage(`该数据映射文件已存在: ${targetPath}`);
+        } else {
+            vscode.window.showErrorMessage(`文件已存在: ${targetPath}`);
+        }
         return;
     } catch {
         // File does not exist yet - this is expected.

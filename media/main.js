@@ -505,6 +505,37 @@
                 </div>`;
         });
 
+        // Dragon body / emote set（固定放在 dragonsurvival 命名空间）
+        html += `<div class="section-title">🦴 ${t('bodies')} (${dragonBodies.length}) ${renderAddFileButton('dragon_body', globalNs.namespace)}</div>`;
+        html += renderEntryGrid(dragonBodies, (entry) => renderSimpleDataCard(entry));
+        html += `<div class="section-title">😀 ${t('emotes')} (${dragonEmotes.length}) ${renderAddFileButton('dragon_emote_set', globalNs.namespace)}</div>`;
+        html += renderEntryGrid(dragonEmotes, (entry) => renderSimpleDataCard(entry));
+
+        // Data maps（固定放在 dragonsurvival 命名空间）
+        html += `<div class="section-title">🍖 ${t('dietEntries')} (${dietEntries.length}) ${renderAddFileButton('diet_entries', globalNs.namespace)}</div>`;
+        html += renderEntryGrid(dietEntries, (entry) => renderSimpleDataCard(entry));
+        html += `<div class="section-title">🎨 ${t('stageResources')} (${stageResources.length}) ${renderAddFileButton('stage_resources', globalNs.namespace)}</div>`;
+        html += renderEntryGrid(stageResources, (entry) => renderSimpleDataCard(entry));
+        html += `<div class="section-title">🌌 ${t('endPlatforms')} (${endPlatforms.length}) ${renderAddFileButton('end_platforms', globalNs.namespace)}</div>`;
+        html += renderEntryGrid(endPlatforms, (entry) => renderSimpleDataCard(entry));
+        html += `<div class="section-title">✨ ${t('beaconData')} (${beaconData.length}) ${renderAddFileButton('dragon_beacon_data', globalNs.namespace)}</div>`;
+        html += renderEntryGrid(beaconData, (entry) => renderSimpleDataCard(entry));
+        html += `<div class="section-title">🧩 ${t('bodyIcons')} (${bodyIcons.length}) ${renderAddFileButton('body_icons', globalNs.namespace)}</div>`;
+        html += renderEntryGrid(bodyIcons, (entry) => renderSimpleDataCard(entry));
+
+        // Tags（固定放在 dragonsurvival 命名空间）
+        html += `<div class="section-title">🏷️ ${t('tags')} (${globalTags.length})</div>`;
+        html += globalTags.length ? `<div class="card-grid">${globalTags.map(tag => renderTagCard(tag)).join('')}</div>` : `<div class="empty-state">${t('noTags')}</div>`;
+
+        // Resource pack (assets)
+        const assetNamespaces = state.model.assets || [];
+        const nsWord = currentLang === 'zh' ? '个命名空间' : t('assetNamespaces');
+        html += `<div class="section-title">📦 ${t('resourcePack')} (${assetNamespaces.length} ${nsWord})</div>`;
+        html += assetNamespaces.length
+            ? `<div class="card-grid">${assetNamespaces.map(nsAsset => renderAssetNamespaceCard(nsAsset)).join('')}</div>`
+            : `<div class="empty-state">${t('noAssets')}</div>`;
+
+
 
 
 

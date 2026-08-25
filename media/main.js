@@ -1941,16 +1941,60 @@
             key = `new_entry_${counter}`;
         }
 
-        // Use the first existing value's shape as a template (empty arrays/objects).
-        const firstValue = Object.values(obj)[0];
-        let value = {};
-        if (Array.isArray(firstValue)) value = [];
-        else if (firstValue && typeof firstValue === 'object') value = cloneValueTemplate(firstValue);
-        else value = firstValue;
+        // Use a built-in template per data-map type instead of copying the first entry.
+        const template = getMapEntryTemplate();
+        let value;
+        if (template !== undefined) {
+            value = JSON.parse(JSON.stringify(template));
+        } else {
+            const firstValue = Object.values(obj)[0];
+            value = {};
+            if (Array.isArray(firstValue)) value = [];
+            else if (firstValue && typeof firstValue === 'object') value = cloneValueTemplate(firstValue);
+            else value = firstValue;
+        }
 
         obj[key] = value;
         renderDetail(currentDetail);
         saveCurrentDetail();
+    }
+
+    function getMapEntryTemplate() {
+        if (!currentDetail) return undefined;
+        const kind = currentDetail.kind;
+
+        if (kind === 'diet_entries') {
+            return { 'neoforge:value': [] };
+        }
+        if (kind === 'stage_resources') {
+            return {};
+        }
+        if (kind === 'end_platforms') {
+            return { structure: '', spawn_position: [0, 50, 0] };
+        }
+        if (kind === 'dragon_beacon_data') {
+            return {
+                effects: [],
+                payment_data: { duration_multiplier: 30, experience_cost: 60 }
+            };
+        }
+        if (kind === 'body_icons') {
+            const speciesIds = [];
+            for (const ns of state.model.namespaces) {
+                for (const entry of ns.entries || []) {
+                    if (entry.kind === 'dragon_species') {
+                        speciesIds.push(`${entry.namespace}:${entry.id}`);
+                    }
+                }
+            }
+            const value = {};
+            for (const id of speciesIds) {
+                value[id] = '';
+            }
+            return value;
+        }
+
+        return undefined;
     }
 
     function deleteMapEntry(path, key) {

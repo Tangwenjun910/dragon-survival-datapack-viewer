@@ -10,6 +10,85 @@
     let currentNamespace = null;
     let currentDetail = null;
     let editingEntry = null;
+    let currentLang = 'zh';
+
+    const UI_STRINGS = {
+        zh: {
+            langBtn: 'EN',
+            selectDir: '选择目录',
+            refresh: '刷新',
+            emptyTitle: '没有发现龙之生存数据包。',
+            emptyHint: '请打开包含 data/<命名空间>/dragonsurvival/ 的工作区，或点击“选择目录”手动指定数据包/模组源码目录。',
+            addSpecies: '＋ 增加龙种',
+            addSpeciesHint: '点击后会在当前工作区自动创建基础龙种数据包。',
+            species: '龙种',
+            stages: '阶段',
+            abilities: '能力',
+            penalties: '惩罚',
+            projectiles: '弹射物',
+            bodies: '龙体',
+            emotes: '表情组',
+            dietEntries: '食物列表',
+            stageResources: '阶段资源',
+            endPlatforms: '末地平台',
+            beaconData: '祭坛/信标效果',
+            bodyIcons: '龙体图标',
+            tags: '标签',
+            resourcePack: '资源包',
+            assetNamespaces: '个命名空间',
+            addFile: '＋ 添加文件',
+            saveMod: '保存修改',
+            addAction: '＋ 添加动作',
+            editJson: '编辑 JSON',
+            openFile: '打开文件',
+            back: '← 返回',
+            noData: '暂无数据',
+            noTags: '暂无标签',
+            noAssets: '未发现 assets 资源目录',
+            renderError: '⚠️ 界面渲染出错：',
+            docTable: '📖 字段说明（参考 dragon_ability.mcdoc）'
+        },
+        en: {
+            langBtn: '中文',
+            selectDir: 'Select Folder',
+            refresh: 'Refresh',
+            emptyTitle: 'No Dragon Survival datapack found.',
+            emptyHint: 'Open a workspace containing data/<namespace>/dragonsurvival/, or click "Select Folder" to choose a datapack/mod source folder.',
+            addSpecies: '＋ Add Dragon Species',
+            addSpeciesHint: 'This will create a basic dragon species datapack in the current workspace.',
+            species: 'Species',
+            stages: 'Stages',
+            abilities: 'Abilities',
+            penalties: 'Penalties',
+            projectiles: 'Projectiles',
+            bodies: 'Bodies',
+            emotes: 'Emote Sets',
+            dietEntries: 'Diet Entries',
+            stageResources: 'Stage Resources',
+            endPlatforms: 'End Platforms',
+            beaconData: 'Altar/Beacon Effects',
+            bodyIcons: 'Body Icons',
+            tags: 'Tags',
+            resourcePack: 'Resource Pack',
+            assetNamespaces: 'namespaces',
+            addFile: '＋ Add File',
+            saveMod: 'Save Changes',
+            addAction: '＋ Add Action',
+            editJson: 'Edit JSON',
+            openFile: 'Open File',
+            back: '← Back',
+            noData: 'No data',
+            noTags: 'No tags',
+            noAssets: 'No assets directory found',
+            renderError: '⚠️ Render error: ',
+            docTable: '📖 Field Reference (dragon_ability.mcdoc)'
+        }
+    };
+
+    function t(key) {
+        const dict = UI_STRINGS[currentLang] || UI_STRINGS.zh;
+        return dict[key] || key;
+    }
 
     const KIND_LABELS = {
         dragon_species: '龙种',
@@ -31,6 +110,13 @@
     document.addEventListener('DOMContentLoaded', () => {
         $('selectBtn').addEventListener('click', () => send({ type: 'select' }));
         $('refreshBtn').addEventListener('click', () => send({ type: 'refresh' }));
+        $('langBtn').addEventListener('click', () => {
+            currentLang = currentLang === 'zh' ? 'en' : 'zh';
+            const btn = $('langBtn');
+            if (btn) btn.textContent = t('langBtn');
+            updateStaticTexts();
+            renderAll();
+        });
         $('editorClose').addEventListener('click', closeEditor);
         $('editorCancel').addEventListener('click', closeEditor);
         $('editorSave').addEventListener('click', saveEditor);
@@ -140,6 +226,8 @@
             }
         });
 
+        updateStaticTexts();
+
         $('detail').addEventListener('change', (event) => {
             const target = event.target;
             if (!(target instanceof Element) || !currentDetail) return;
@@ -197,6 +285,15 @@
     }
 
     // ---------- Rendering ----------
+
+    function updateStaticTexts() {
+        const select = $('selectBtn');
+        const refresh = $('refreshBtn');
+        const lang = $('langBtn');
+        if (select) select.textContent = '📂 ' + t('selectDir');
+        if (refresh) refresh.textContent = '🔄 ' + t('refresh');
+        if (lang) lang.textContent = t('langBtn');
+    }
 
     function renderAll() {
         try {
@@ -270,7 +367,7 @@
     }
 
     function renderAddFileButton(kind, namespace) {
-        return `<button class="add-file-btn" data-kind="${esc(kind)}" data-namespace="${esc(namespace)}">＋ 添加文件</button>`;
+        return `<button class="add-file-btn" data-kind="${esc(kind)}" data-namespace="${esc(namespace)}">${t('addFile')}</button>`;
     }
 
     function renderOverview() {
@@ -280,12 +377,11 @@
         if (!ns) {
             container.innerHTML = `
                 <div class="empty-state">
-                    <p>🐉 没有发现龙之生存数据包。</p>
-                    <p>请打开包含 <code>data/&lt;命名空间&gt;/dragonsurvival/</code> 的工作区，<br>
-                    或点击“选择目录”手动指定数据包/模组源码目录。</p>
-                    <button class="add-file-btn" data-kind="dragon_species" data-namespace="dragonsurvival">＋ 增加龙种</button>
+                    <p>🐉 ${esc(t('emptyTitle'))}</p>
+                    <p>${esc(t('emptyHint'))}</p>
+                    <button class="add-file-btn" data-kind="dragon_species" data-namespace="dragonsurvival">${esc(t('addSpecies'))}</button>
                     <p style="font-size: 11px; color: var(--vscode-descriptionForeground, #9d9d9d); margin-top: 8px;">
-                        点击后会在当前工作区自动创建基础龙种数据包。
+                        ${esc(t('addSpeciesHint'))}
                     </p>
                 </div>`;
             return;
@@ -310,7 +406,7 @@
         let html = '';
 
         // Species overview
-        html += `<div class="section-title">🐲 龙种 (${species.length}) ${renderAddFileButton('dragon_species', ns.namespace)}</div>`;
+        html += `<div class="section-title">🐲 ${t('species')} (${species.length}) ${renderAddFileButton('dragon_species', ns.namespace)}</div>`;
         if (species.length === 0) {
             html += `<div class="empty-state">未定义 dragon_species</div>`;
         } else {
@@ -322,7 +418,7 @@
         }
 
         // Stage overview
-        html += `<div class="section-title">📈 成长阶段 (${stages.length}) ${renderAddFileButton('dragon_stage', ns.namespace)}</div>`;
+        html += `<div class="section-title">📈 ${t('stages')} (${stages.length}) ${renderAddFileButton('dragon_stage', ns.namespace)}</div>`;
         html += renderEntryGrid(stages, (entry) => {
             const d = entry.data || {};
             const range = d.growth_range || {};
@@ -341,7 +437,7 @@
         });
 
         // Ability overview
-        html += `<div class="section-title">⚡ 能力 (${abilities.length}) ${renderAddFileButton('dragon_ability', ns.namespace)}</div>`;
+        html += `<div class="section-title">⚡ ${t('abilities')} (${abilities.length}) ${renderAddFileButton('dragon_ability', ns.namespace)}</div>`;
         html += renderEntryGrid(abilities, (entry) => {
             const d = entry.data || {};
             const activation = d.activation || {};
@@ -361,7 +457,7 @@
         });
 
         // Penalty overview
-        html += `<div class="section-title">⚠️ 惩罚 (${penalties.length}) ${renderAddFileButton('dragon_penalty', ns.namespace)}</div>`;
+        html += `<div class="section-title">⚠️ ${t('penalties')} (${penalties.length}) ${renderAddFileButton('dragon_penalty', ns.namespace)}</div>`;
         html += renderEntryGrid(penalties, (entry) => {
             const d = entry.data || {};
             const effect = d.effect || {};
@@ -379,7 +475,7 @@
         });
 
         // Projectile overview
-        html += `<div class="section-title">🎯 弹射物 (${projectiles.length}) ${renderAddFileButton('projectile_data', ns.namespace)}</div>`;
+        html += `<div class="section-title">🎯 ${t('projectiles')} (${projectiles.length}) ${renderAddFileButton('projectile_data', ns.namespace)}</div>`;
         html += renderEntryGrid(projectiles, (entry) => {
             const d = entry.data || {};
             const g = d.general_data || {};
@@ -396,35 +492,7 @@
                 </div>`;
         });
 
-        // Dragon body / emote set（固定放在 dragonsurvival 命名空间）
-        html += `<div class="section-title">🦴 龙体 (${dragonBodies.length}) ${renderAddFileButton('dragon_body', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(dragonBodies, (entry) => renderSimpleDataCard(entry));
-        html += `<div class="section-title">😀 表情组 (${dragonEmotes.length}) ${renderAddFileButton('dragon_emote_set', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(dragonEmotes, (entry) => renderSimpleDataCard(entry));
 
-        // Data maps（固定放在 dragonsurvival 命名空间）
-        html += `<div class="section-title">🍖 食物列表 (${dietEntries.length}) ${renderAddFileButton('diet_entries', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(dietEntries, (entry) => renderSimpleDataCard(entry));
-        html += `<div class="section-title">🎨 阶段资源 (${stageResources.length}) ${renderAddFileButton('stage_resources', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(stageResources, (entry) => renderSimpleDataCard(entry));
-        html += `<div class="section-title">🌌 末地平台 (${endPlatforms.length}) ${renderAddFileButton('end_platforms', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(endPlatforms, (entry) => renderSimpleDataCard(entry));
-        html += `<div class="section-title">✨ 祭坛/信标效果 (${beaconData.length}) ${renderAddFileButton('dragon_beacon_data', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(beaconData, (entry) => renderSimpleDataCard(entry));
-        html += `<div class="section-title">🧩 龙体图标 (${bodyIcons.length}) ${renderAddFileButton('body_icons', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(bodyIcons, (entry) => renderSimpleDataCard(entry));
-
-        // Tags（固定放在 dragonsurvival 命名空间）
-        html += `<div class="section-title">🏷️ 标签 (${globalTags.length})</div>`;
-        html += globalTags.length ? `<div class="card-grid">${globalTags.map(tag => renderTagCard(tag)).join('')}</div>` : '<div class="empty-state">暂无标签</div>';
-
-
-        // Resource pack (assets)
-        const assetNamespaces = state.model.assets || [];
-        html += `<div class="section-title">📦 资源包 (${assetNamespaces.length} 个命名空间)</div>`;
-        html += assetNamespaces.length
-            ? `<div class="card-grid">${assetNamespaces.map(nsAsset => renderAssetNamespaceCard(nsAsset)).join('')}</div>`
-            : '<div class="empty-state">未发现 assets 资源目录</div>';
 
 
 
@@ -486,7 +554,7 @@
 
     function renderEntryGrid(entries, cardRenderer) {
         if (entries.length === 0) {
-            return `<div class="empty-state">暂无数据</div>`;
+            return `<div class="empty-state">${t('noData')}</div>`;
         }
         return `<div class="card-grid">${entries.map(cardRenderer).join('')}</div>`;
     }
@@ -564,11 +632,11 @@
 
         container.innerHTML = `
             <div class="detail-header">
-                <button class="back-button" id="backBtn">← 返回</button>
+                <button class="back-button" id="backBtn">${esc(t('back'))}</button>
                 <h2>${esc(entry.id)}</h2>
                 <span class="badge">${esc(entry.kind)}</span>
-                <button class="back-button" id="openFileBtn">打开文件</button>
-                <button class="back-button primary" id="editBtn">编辑 JSON</button>
+                <button class="back-button" id="openFileBtn">${esc(t('openFile'))}</button>
+                <button class="back-button primary" id="editBtn">${esc(t('editJson'))}</button>
             </div>
             <div class="detail-path">${esc(entry.filePath)}</div>
             ${body}
@@ -721,7 +789,7 @@
                         <option value="false" ${!d.is_natural_growth_stopped ? 'selected' : ''}>否</option>
                     </select>
                 </div>
-                <button id="saveStageBtn" class="back-button primary">保存修改</button>
+                <button id="saveStageBtn" class="back-button primary">${esc(t('saveMod'))}</button>
             </div>
             <div class="info-grid">${infoItems}</div>
             <div class="section-title">属性修正 (${modifiers.length})</div>
@@ -806,8 +874,8 @@
                     </div>
                     ${renderStructuredForm(action, 0, ['actions', i])}
                 </div>`).join('') : '<div class="empty-state">暂无动作，点击下方按钮添加</div>'}
-            <button id="addActionBtn" class="back-button primary" style="margin-top: 4px">＋ 添加动作</button>
-            <button id="saveAbilityBtn" class="back-button primary" style="margin-top: 12px">保存修改</button>
+            <button id="addActionBtn" class="back-button primary" style="margin-top: 4px">${esc(t('addAction'))}</button>
+            <button id="saveAbilityBtn" class="back-button primary" style="margin-top: 12px">${esc(t('saveMod'))}</button>
         `;
 
     }
@@ -836,7 +904,7 @@
                 <div class="editor-field">
                     <label class="form-label">激活类型</label>
                     <select id="activationType" class="form-select">
-                        ${ACTIVATION_TYPE_OPTIONS.map(option => `<option value="${esc(option.value)}" ${option.value === activationType ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}
+                        ${ACTIVATION_TYPE_OPTIONS.map(option => `<option value="${esc(option.value)}" ${option.value === activationType ? 'selected' : ''}>${esc(getEnumLabel(option))}</option>`).join('')}
                     </select>
                 </div>
                 ${renderEditableNumber('初始魔力消耗', 'initialManaCost', activation.initial_mana_cost)}
@@ -881,7 +949,7 @@
                 <div class="editor-field">
                     <label class="form-label">升级类型</label>
                     <select id="upgradeType" class="form-select">
-                        ${UPGRADE_TYPE_OPTIONS.map(option => `<option value="${esc(option.value)}" ${option.value === upgradeType ? 'selected' : ''}>${esc(option.label)}</option>`).join('')}
+                        ${UPGRADE_TYPE_OPTIONS.map(option => `<option value="${esc(option.value)}" ${option.value === upgradeType ? 'selected' : ''}>${esc(getEnumLabel(option))}</option>`).join('')}
                     </select>
                 </div>
                 <div class="editor-field">
@@ -1111,7 +1179,7 @@
                 if (enumOptions) {
                     const currentValue = String(val);
                     const optionsHtml = enumOptions.map(option =>
-                        `<option value="${esc(option.value)}" ${option.value === currentValue ? 'selected' : ''}>${esc(option.label)}</option>`
+                        `<option value="${esc(option.value)}" ${option.value === currentValue ? 'selected' : ''}>${esc(getEnumLabel(option))}</option>`
                     ).join('');
                     const currentOption = enumOptions.find(option => option.value === currentValue);
                     fieldControl = `<select class="form-select st-edit-field st-enum-field" data-edit-path="${fieldPath}">
@@ -1384,9 +1452,23 @@
         ]
     };
 
+    function getEnumLabel(option) {
+        if (currentLang === 'zh') {
+            const firstPart = option.label.split(' ')[0];
+            return firstPart || option.label;
+        }
+        // English: strip the leading Chinese part if the label is "中文 English"
+        const parts = option.label.split(' ');
+        if (parts.length > 1 && /[^\u0000-\u007F]/.test(parts[0])) {
+            return parts.slice(1).join(' ');
+        }
+        return option.label;
+    }
+
+
 
     function humanizeKey(key) {
-        if (FORM_KEY_LABELS[key]) {
+        if (currentLang === 'zh' && FORM_KEY_LABELS[key]) {
             return FORM_KEY_LABELS[key];
         }
         const spaced = key.replace(/_/g, ' ');

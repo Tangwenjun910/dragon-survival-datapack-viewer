@@ -121,6 +121,7 @@ export class DragonDataProvider implements vscode.WebviewViewProvider {
             <div class="title-row">
                 <span class="logo">🐉</span>
                 <h1>龙之生存数据包</h1>
+                <button id="langBtn" class="lang-btn" title="切换语言">EN</button>
             </div>
             <div class="toolbar">
                 <button id="selectBtn" title="选择数据包目录">📂 选择目录</button>

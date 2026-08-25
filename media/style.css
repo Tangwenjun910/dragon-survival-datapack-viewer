@@ -56,6 +56,21 @@ body {
     font-weight: 600;
 }
 
+.lang-btn {
+    margin-left: auto;
+    background: var(--vscode-button-secondaryBackground, #3a3d41);
+    color: var(--vscode-button-secondaryForeground, #ffffff);
+    border: none;
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.lang-btn:hover {
+    background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
 .logo {
     font-size: 18px;
 }

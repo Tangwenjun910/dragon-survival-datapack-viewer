@@ -253,12 +253,19 @@ async function createSpeciesCompanionFiles(namespace: string, speciesId: string,
     });
 
     await updateDataMap('dragon_body', 'body_icons', (values) => {
-        for (const bodyKey of Object.keys(values)) {
-            const bodyMap = values[bodyKey];
+        const defaultBodyKeys = ['center', 'north', 'east', 'south', 'west', 'no_model'];
+        const bodyKeys = Object.keys(values).length > 0
+            ? Object.keys(values)
+            : defaultBodyKeys;
+
+        for (const bodyKey of bodyKeys) {
+            if (!values[bodyKey]) {
+                values[bodyKey] = {};
+            }
+            const bodyMap = values[bodyKey] as Record<string, unknown>;
             if (bodyMap && typeof bodyMap === 'object' && !Array.isArray(bodyMap)) {
-                const bodyMapObj = bodyMap as Record<string, unknown>;
-                if (bodyMapObj[speciesFull] === undefined) {
-                    bodyMapObj[speciesFull] = '';
+                if (bodyMap[speciesFull] === undefined) {
+                    bodyMap[speciesFull] = '';
                 }
             }
         }

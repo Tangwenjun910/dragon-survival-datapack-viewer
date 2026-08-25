@@ -46,7 +46,18 @@
             noTags: '暂无标签',
             noAssets: '未发现 assets 资源目录',
             renderError: '⚠️ 界面渲染出错：',
-            docTable: '📖 字段说明（参考 dragon_ability.mcdoc）'
+            docTable: '📖 字段说明（参考 dragon_ability.mcdoc）',
+            activation: '激活方式',
+            upgrade: '升级',
+            usageBlocked: '使用限制',
+            other: '其他',
+            icon: '图标',
+            actions: '动作',
+            effect: '效果',
+            trigger: '触发',
+            stageAttrs: '阶段属性',
+            modifiers: '属性修正',
+            growthItems: '成长物品'
         },
         en: {
             langBtn: '中文',
@@ -81,7 +92,18 @@
             noTags: 'No tags',
             noAssets: 'No assets directory found',
             renderError: '⚠️ Render error: ',
-            docTable: '📖 Field Reference (dragon_ability.mcdoc)'
+            docTable: '📖 Field Reference (dragon_ability.mcdoc)',
+            activation: 'Activation',
+            upgrade: 'Upgrade',
+            usageBlocked: 'Usage Blocked',
+            other: 'Other',
+            icon: 'Icon',
+            actions: 'Actions',
+            effect: 'Effect',
+            trigger: 'Trigger',
+            stageAttrs: 'Stage Attributes',
+            modifiers: 'Modifiers',
+            growthItems: 'Growth Items'
         }
     };
 
@@ -773,7 +795,7 @@
         }).join('');
 
         return `
-            <div class="section-title">阶段属性</div>
+            <div class="section-title">${esc(t('stageAttrs'))}</div>
             <div class="ability-editor">
                 <div class="editor-field">
                     <label class="form-label">默认阶段</label>
@@ -792,9 +814,9 @@
                 <button id="saveStageBtn" class="back-button primary">${esc(t('saveMod'))}</button>
             </div>
             <div class="info-grid">${infoItems}</div>
-            <div class="section-title">属性修正 (${modifiers.length})</div>
+            <div class="section-title">${esc(t('modifiers'))} (${modifiers.length})</div>
             ${modifiers.length ? `<table><thead><tr><th>属性</th><th>运算</th><th>数值</th></tr></thead><tbody>${modifierRows}</tbody></table>` : '<div class="empty-state">无</div>'}
-            <div class="section-title">成长物品 (${growthItems.length})</div>
+            <div class="section-title">${esc(t('growthItems'))} (${growthItems.length})</div>
             ${growthItems.length ? `<table><thead><tr><th>物品</th><th>成长时间</th></tr></thead><tbody>${itemRows}</tbody></table>` : '<div class="empty-state">无</div>'}
         `;
     }
@@ -845,15 +867,15 @@
         const iconEntries = (icon.texture_entries || []).map(ie => `<span class="chip">Lv${ie.from_level} → ${esc(shortName(ie.texture_resource))}</span>`).join('');
 
         return `
-            <div class="section-title">激活方式</div>
+            <div class="section-title">${esc(t('activation'))}</div>
             ${renderActivationEditor(activation)}
-            <div class="section-title">升级</div>
+            <div class="section-title">${esc(t('upgrade'))}</div>
             ${renderUpgradeEditor(upgrade)}
             ${d.usage_blocked ? `
-                <div class="section-title">使用限制</div>
+                <div class="section-title">${esc(t('usageBlocked'))}</div>
                 <div class="ability-editor">${renderStructuredForm(d.usage_blocked, 0, ['usage_blocked'])}</div>` : ''}
             ${d.can_be_manually_disabled != null ? `
-                <div class="section-title">其他</div>
+                <div class="section-title">${esc(t('other'))}</div>
                 <div class="ability-editor">
                     <div class="editor-field">
                         <label class="form-label">可手动禁用</label>
@@ -863,9 +885,9 @@
                         </select>
                     </div>
                 </div>` : ''}
-            <div class="section-title">图标</div>
+            <div class="section-title">${esc(t('icon'))}</div>
             ${renderStructuredForm(icon, 0, ['icon'])}
-            <div class="section-title">动作 (${actions.length})</div>
+            <div class="section-title">${esc(t('actions'))} (${actions.length})</div>
             ${actions.length ? actions.map((action, i) => `
                 <div class="action-block" data-action-index="${i}">
                     <div class="action-header">
@@ -1340,7 +1362,28 @@
         fears: '恐惧列表',
         modifications: '修改列表',
         duration: '持续时间',
-        function: '函数'
+        function: '函数',
+        activation: '激活方式',
+        food_sprites: '食物图标',
+        mana_sprites: '魔力图标',
+        altar_banner: '祭坛横幅',
+        ability_bar: '能力槽',
+        growth_left_arrow: '成长左箭头',
+        growth_right_arrow: '成长右箭头',
+        growth_crystal: '成长水晶',
+        food_tooltip: '食物提示',
+        claw_texture_slot: '爪纹理槽',
+        primary_color: '主色',
+        secondary_color: '辅色',
+        nutrition_icon: '营养图标',
+        saturation_icon: '饱和度图标',
+        full: '满',
+        reserved: '预留',
+        recovery: '恢复',
+        empty: '空',
+        hover_icon: '悬浮图标',
+        font: '字体',
+        custom_growth_info: '自定义成长提示'
     };
 
     const ENUM_OPTIONS = {
@@ -1505,9 +1548,9 @@
             ${d.condition ? `
                 <div class="section-title">触发条件</div>
                 <div class="ability-editor">${renderStructuredForm(d.condition, 0, ['condition'])}</div>` : ''}
-            <div class="section-title">⚠️ 效果（effect）</div>
+            <div class="section-title">⚠️ ${esc(t('effect'))}</div>
             <div class="ability-editor">${renderStructuredForm(effect, 0, ['effect'])}</div>
-            <div class="section-title">⚡ 触发（trigger）</div>
+            <div class="section-title">⚡ ${esc(t('trigger'))}</div>
             <div class="ability-editor">${renderStructuredForm(trigger, 0, ['trigger'])}</div>
         `;
     }

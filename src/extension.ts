@@ -520,8 +520,35 @@ function buildDefaultTemplate(kind: RegistryKind, namespace: string, id: string)
             return {
                 abilities: `#${namespace}:${id}`,
                 misc_resources: {
+                    food_sprites: `${namespace}:textures/gui/custom/food_icons/${id}_food_icons.png`,
+                    mana_sprites: {
+                        full: `${namespace}:textures/gui/custom/mana_icons/${id}/full.png`,
+                        reserved: `${namespace}:textures/gui/custom/mana_icons/${id}/reserved.png`,
+                        recovery: `${namespace}:textures/gui/custom/mana_icons/${id}/recovery.png`,
+                        empty: `${namespace}:textures/gui/custom/mana_icons/${id}/empty.png`
+                    },
+                    altar_banner: `${namespace}:textures/gui/custom/altar/${id}/altar_icon.png`,
+                    ability_bar: `${namespace}:textures/gui/custom/casting_bars/${id}/cast_bar.png`,
+                    growth_left_arrow: {
+                        hover_icon: `${namespace}:textures/gui/custom/stage/${id}/left_arrow_hover.png`,
+                        icon: `${namespace}:textures/gui/custom/stage/${id}/left_arrow_main.png`
+                    },
+                    growth_right_arrow: {
+                        hover_icon: `${namespace}:textures/gui/custom/stage/${id}/right_arrow_hover.png`,
+                        icon: `${namespace}:textures/gui/custom/stage/${id}/right_arrow_main.png`
+                    },
+                    growth_crystal: {
+                        empty: `${namespace}:textures/gui/custom/stage/${id}/point_main.png`,
+                        full: `${namespace}:textures/gui/custom/stage/${id}/point_hover.png`
+                    },
+                    food_tooltip: {
+                        font: `${namespace}:food_tooltip_icon_font`,
+                        nutrition_icon: '\\uEA01',
+                        saturation_icon: '\\uEA04'
+                    },
                     primary_color: '#FFFFFF',
-                    secondary_color: '#FFFFFF'
+                    secondary_color: '#FFFFFF',
+                    claw_texture_slot: 'PICKAXE'
                 },
                 penalties: `#${namespace}:${id}`
             };

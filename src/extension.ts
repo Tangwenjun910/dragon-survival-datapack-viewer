@@ -526,8 +526,8 @@ function buildDefaultTemplate(kind: RegistryKind, namespace: string, id: string)
             return {
                 abilities: `#${namespace}:${id}`,
                 misc_resources: {
-                    primary_color: '#2E2888',
-                    secondary_color: '#C6BDFF'
+                    primary_color: '#FFFFFF',
+                    secondary_color: '#FFFFFF'
                 },
                 penalties: `#${namespace}:${id}`
             };

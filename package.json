@@ -1,0 +1,89 @@
+{
+  "name": "dragon-survival-datapack-viewer",
+  "displayName": "龙之生存数据包可视化",
+  "description": "在侧边栏可视化 Dragon Survival（龙之生存）数据包：物种、阶段、能力、惩罚、弹射物数据，并支持基础编辑。",
+  "version": "0.1.0",
+  "publisher": "local",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/local/dragon-survival-datapack-viewer.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Visualization",
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:dragonSurvivalDatapack.view",
+    "onCommand:dragonSurvivalDatapack.open",
+    "onCommand:dragonSurvivalDatapack.refresh",
+    "onCommand:dragonSurvivalDatapack.selectDatapack"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "dragonSurvivalDatapack",
+          "title": "龙之生存数据包",
+          "icon": "media/dragon.svg"
+        }
+      ]
+    },
+    "views": {
+      "dragonSurvivalDatapack": [
+        {
+          "id": "dragonSurvivalDatapack.view",
+          "name": "龙之生存数据包可视化",
+          "type": "webview"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "dragonSurvivalDatapack.open",
+        "title": "打开龙之生存数据包可视化",
+        "icon": "$(eye)"
+      },
+      {
+        "command": "dragonSurvivalDatapack.refresh",
+        "title": "刷新龙之生存数据包",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "dragonSurvivalDatapack.selectDatapack",
+        "title": "选择龙之生存数据包目录",
+        "icon": "$(folder-opened)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "dragonSurvivalDatapack.refresh",
+          "when": "view == dragonSurvivalDatapack.view",
+          "group": "navigation@1"
+        },
+        {
+          "command": "dragonSurvivalDatapack.selectDatapack",
+          "when": "view == dragonSurvivalDatapack.view",
+          "group": "navigation@2"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.30",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.9.2",
+    "typescript": "^5.4.5"
+  }
+}

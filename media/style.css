@@ -1,0 +1,817 @@
+:root {
+    --bg: var(--vscode-sideBar-background, #1e1e1e);
+    --fg: var(--vscode-sideBar-foreground, #cccccc);
+    --border: var(--vscode-panel-border, #3c3c3c);
+    --card-bg: var(--vscode-editor-background, #252526);
+    --card-border: var(--vscode-panel-border, #3c3c3c);
+    --accent: var(--vscode-button-background, #0e639c);
+    --accent-fg: var(--vscode-button-foreground, #ffffff);
+    --muted: var(--vscode-descriptionForeground, #9d9d9d);
+    --warn: #d7ba7d;
+    --error: #f48771;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+[hidden] {
+    display: none !important;
+}
+
+body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--vscode-font-family, "Segoe UI", sans-serif);
+    font-size: var(--vscode-font-size, 13px);
+    color: var(--fg);
+    background: var(--bg);
+}
+
+#app {
+    display: flex;
+    flex-direction: column;
+    min-height: 100vh;
+}
+
+.app-header {
+    padding: 12px 12px 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.title-row h1 {
+    font-size: 15px;
+    margin: 0;
+    font-weight: 600;
+}
+
+.logo {
+    font-size: 18px;
+}
+
+.toolbar {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 6px;
+}
+
+.toolbar button,
+.editor-actions button {
+    background: var(--vscode-button-secondaryBackground, #3a3d41);
+    color: var(--vscode-button-secondaryForeground, #ffffff);
+    border: none;
+    padding: 4px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.toolbar button:hover,
+.editor-actions button:hover {
+    background: var(--vscode-button-secondaryHoverBackground, #45494e);
+}
+
+.toolbar button.primary,
+.editor-actions button.primary {
+    background: var(--accent);
+    color: var(--accent-fg);
+}
+
+.toolbar button.primary:hover,
+.editor-actions button.primary:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.roots {
+    font-size: 11px;
+    color: var(--muted);
+    word-break: break-all;
+    margin-top: 2px;
+}
+
+.status {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 4px;
+    min-height: 14px;
+}
+
+.namespace-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.namespace-tabs button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--fg);
+    padding: 4px 12px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.namespace-tabs button.active {
+    background: var(--accent);
+    color: var(--accent-fg);
+    border-color: transparent;
+}
+
+.content {
+    padding: 12px;
+    flex: 1;
+}
+
+.section-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    margin: 16px 0 8px 0;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 4px;
+}
+
+.add-file-btn {
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #ffffff);
+    border: none;
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.add-file-btn:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.delete-file-btn {
+    background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+    color: var(--vscode-inputValidation-errorForeground, #f48771);
+    border: none;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    cursor: pointer;
+    margin-left: auto;
+}
+
+.delete-file-btn:hover {
+    filter: brightness(1.2);
+}
+
+.empty-state {
+    color: var(--muted);
+    padding: 24px 8px;
+    text-align: center;
+    line-height: 1.8;
+}
+
+.card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 10px;
+}
+
+.card {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: border-color 0.15s ease, transform 0.1s ease;
+}
+
+.card:hover {
+    border-color: var(--accent);
+    transform: translateY(-1px);
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 6px;
+}
+
+.card-title {
+    font-weight: 600;
+    font-size: 13px;
+    word-break: break-all;
+}
+
+.card-subtitle {
+    font-size: 11px;
+    color: var(--muted);
+    word-break: break-all;
+}
+
+.badge {
+    display: inline-block;
+    background: var(--vscode-badge-background, #4d4d4d);
+    color: var(--vscode-badge-foreground, #ffffff);
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+.species-card {
+    border-left: 4px solid var(--species-color, var(--accent));
+}
+
+.color-swatches {
+    display: flex;
+    gap: 6px;
+    margin: 6px 0;
+}
+
+.color-swatch {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.flow {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 6px;
+    margin: 8px 0;
+    font-size: 12px;
+}
+
+.flow-node {
+    background: var(--vscode-input-background, #3c3c3c);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 2px 10px;
+    white-space: nowrap;
+}
+
+.flow-node.default {
+    border-color: var(--accent);
+}
+
+.flow-arrow {
+    color: var(--muted);
+}
+
+.chip-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    margin-top: 6px;
+}
+
+.chip {
+    background: var(--vscode-input-background, #3c3c3c);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: 11px;
+    color: var(--fg);
+    word-break: break-all;
+}
+
+.form-object {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 2px 0;
+}
+
+.form-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 2px 0;
+}
+
+.form-label {
+    font-weight: 600;
+    color: var(--vscode-editor-foreground, #cccccc);
+    font-size: 12px;
+    min-width: 0;
+}
+
+.form-value {
+    background: var(--vscode-input-background, #3c3c3c);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 12px;
+    color: var(--vscode-input-foreground, #cccccc);
+    word-break: break-word;
+    display: inline-block;
+    max-width: 100%;
+}
+
+.form-card {
+    background: var(--vscode-sideBar-background, #252526);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 8px;
+    margin: 2px 0 2px 8px;
+}
+
+.form-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+}
+
+.form-card-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    margin-bottom: 4px;
+}
+
+.add-array-btn {
+    align-self: flex-start;
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #ffffff);
+    border: none;
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    margin: 4px 0;
+}
+
+.add-array-btn:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.delete-array-item {
+    background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+    color: var(--vscode-inputValidation-errorForeground, #f48771);
+    border: none;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.delete-array-item:hover {
+    filter: brightness(1.2);
+}
+
+.add-map-entry {
+    align-self: flex-start;
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #ffffff);
+    border: none;
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 12px;
+    cursor: pointer;
+    margin: 4px 0;
+}
+
+.add-map-entry:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.delete-map-entry {
+    background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+    color: var(--vscode-inputValidation-errorForeground, #f48771);
+    border: none;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.delete-map-entry:hover {
+    filter: brightness(1.2);
+}
+
+.st-map-key {
+    width: 240px;
+}
+
+.form-array {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-left: 6px;
+}
+
+.form-empty {
+    color: var(--muted);
+    font-size: 12px;
+    padding: 2px 0;
+}
+
+.form-badge {
+    background: var(--vscode-badge-background, #4d4d4d);
+    color: var(--vscode-badge-foreground, #ffffff);
+    border-radius: 10px;
+    padding: 1px 8px;
+    font-size: 11px;
+}
+
+.action-block {
+    margin-bottom: 12px;
+    background: var(--vscode-editor-background, #1e1e1e);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+
+.action-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-weight: 600;
+    font-size: 13px;
+    margin-bottom: 6px;
+}
+
+.delete-action-btn {
+    background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+    color: var(--vscode-inputValidation-errorForeground, #f48771);
+    border: none;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.delete-action-btn:hover {
+    filter: brightness(1.2);
+}
+
+.color-edit-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin: 8px 0;
+}
+
+.color-edit-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.color-edit-control {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.color-edit-control input[type="color"] {
+    width: 56px;
+    height: 32px;
+    padding: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--vscode-input-background, #3c3c3c);
+    cursor: pointer;
+}
+
+.color-hex {
+    background: var(--vscode-input-background, #3c3c3c);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 12px;
+    color: var(--vscode-input-foreground, #cccccc);
+    font-family: var(--vscode-editor-font-family, Consolas, monospace);
+}
+
+.color-hex-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    margin: 4px 0;
+}
+
+
+
+.ability-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    background: var(--vscode-editor-background, #1e1e1e);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+}
+
+.editor-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.editor-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.form-select,
+.form-input {
+    background: var(--vscode-input-background, #3c3c3c);
+    color: var(--vscode-input-foreground, #cccccc);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 12px;
+    max-width: 100%;
+    width: 100%;
+}
+
+.form-select {
+    width: auto;
+    min-width: 140px;
+}
+
+.form-input {
+    width: 140px;
+}
+
+.field-control-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.field-palette {
+    margin-top: 8px;
+    padding-top: 6px;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.field-palette-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.add-field-btn {
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #ffffff);
+    border: none;
+    border-radius: 4px;
+    padding: 2px 10px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.add-field-btn:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.delete-field-btn {
+    background: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+    color: var(--vscode-inputValidation-errorForeground, #f48771);
+    border: none;
+    border-radius: 4px;
+    padding: 2px 8px;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.delete-field-btn:hover {
+    filter: brightness(1.2);
+}
+
+
+
+.detail {
+    max-width: 900px;
+}
+
+.detail-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
+}
+
+.detail-header h2 {
+    margin: 0;
+    font-size: 16px;
+}
+
+.detail-path {
+    color: var(--muted);
+    font-size: 11px;
+    word-break: break-all;
+    margin-bottom: 12px;
+}
+
+.back-button {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--fg);
+    padding: 3px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+    margin: 10px 0;
+}
+
+.info-item {
+    background: var(--card-bg);
+    border: 1px solid var(--card-border);
+    border-radius: 6px;
+    padding: 8px 10px;
+}
+
+.info-label {
+    font-size: 11px;
+    color: var(--muted);
+    margin-bottom: 4px;
+}
+
+.info-value {
+    font-size: 13px;
+    word-break: break-word;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8px 0;
+    font-size: 12px;
+}
+
+.doc-details {
+    margin: 12px 0;
+}
+
+.doc-details summary {
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.doc-table-wrap {
+    overflow-x: auto;
+}
+
+.doc-table th,
+.doc-table td {
+    border: 1px solid var(--border);
+    padding: 5px 8px;
+    text-align: left;
+    vertical-align: top;
+    font-size: 12px;
+}
+
+.doc-table th {
+    background: var(--vscode-editor-lineHighlightBackground, rgba(255,255,255,0.04));
+    white-space: nowrap;
+}
+
+.doc-table td:first-child {
+    font-family: var(--vscode-editor-font-family, Consolas, monospace);
+    white-space: nowrap;
+}
+
+th, td {
+    border: 1px solid var(--border);
+    padding: 4px 8px;
+    text-align: left;
+    vertical-align: top;
+}
+
+th {
+    background: var(--vscode-editor-lineHighlightBackground, rgba(255,255,255,0.04));
+}
+
+details {
+    margin: 8px 0;
+}
+
+summary {
+    cursor: pointer;
+    color: var(--muted);
+    font-size: 12px;
+}
+
+pre.raw {
+    background: var(--vscode-textCodeBlock-background, #1e1e1e);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px;
+    overflow-x: auto;
+    font-size: 11px;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+.editor-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 16px;
+}
+
+.editor-box {
+    width: min(760px, 100%);
+    max-height: 90vh;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+}
+
+.editor-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.editor-header span {
+    font-weight: 600;
+    font-size: 13px;
+}
+
+.editor-header button {
+    background: transparent;
+    border: none;
+    color: var(--muted);
+    font-size: 16px;
+    cursor: pointer;
+}
+
+#editorText {
+    width: 100%;
+    min-height: 45vh;
+    resize: vertical;
+    background: var(--vscode-input-background, #1e1e1e);
+    color: var(--vscode-input-foreground, #cccccc);
+    border: none;
+    padding: 10px;
+    font-family: var(--vscode-editor-font-family, Consolas, monospace);
+    font-size: 12px;
+    line-height: 1.5;
+    outline: none;
+}
+
+.editor-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+}
+
+.editor-error {
+    flex: 1;
+    color: var(--error);
+    font-size: 12px;
+    word-break: break-word;
+}
+
+.hidden {
+    display: none !important;
+}

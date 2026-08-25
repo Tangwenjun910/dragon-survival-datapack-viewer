@@ -178,7 +178,10 @@
         const message = event.data;
         if (!message || message.type !== 'state') return;
 
-        state.model = message.model || { roots: [], namespaces: [], errors: [] };
+        state.model = message.model || { roots: [], namespaces: [], assets: [], errors: [] };
+        if (!Array.isArray(state.model.assets)) {
+            state.model.assets = [];
+        }
         if (!currentNamespace || !state.model.namespaces.some(ns => ns.namespace === currentNamespace)) {
             currentNamespace = state.model.namespaces.length > 0 ? state.model.namespaces[0].namespace : null;
         }
@@ -196,17 +199,25 @@
     // ---------- Rendering ----------
 
     function renderAll() {
-        renderRoots();
-        renderStatus();
-        renderNamespaceTabs();
-        if (currentDetail) {
-            $('overview').hidden = true;
-            $('detail').hidden = false;
-            renderDetail(currentDetail);
-        } else {
-            $('detail').hidden = true;
-            $('overview').hidden = false;
-            renderOverview();
+        try {
+            renderRoots();
+            renderStatus();
+            renderNamespaceTabs();
+            if (currentDetail) {
+                $('overview').hidden = true;
+                $('detail').hidden = false;
+                renderDetail(currentDetail);
+            } else {
+                $('detail').hidden = true;
+                $('overview').hidden = false;
+                renderOverview();
+            }
+        } catch (error) {
+            const overview = $('overview');
+            if (overview) {
+                overview.hidden = false;
+                overview.innerHTML = `<div class="empty-state">⚠️ 界面渲染出错：${esc(error && error.message ? error.message : String(error))}</div>`;
+            }
         }
     }
 

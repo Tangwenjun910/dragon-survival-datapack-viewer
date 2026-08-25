@@ -563,7 +563,7 @@
         ].filter(item => item[1]).map(([k, v]) => `<div class="info-item"><div class="info-label">${esc(k)}</div><div class="info-value">${esc(v)}</div></div>`).join('');
 
         return `
-            <div class="section-title">颜色</div>
+            <div class="section-title">食物悬浮框颜色</div>
             <div class="color-edit-grid">
                 <label class="color-edit-field">
                     <span class="form-label">主色</span>

@@ -11,6 +11,17 @@
     let currentDetail = null;
     let editingEntry = null;
     let currentLang = 'zh';
+    let settings = {
+        openJsonOnDetail: true,
+        showLocalizedNames: true,
+        showRawFieldKeys: true,
+        rememberScrollPosition: true,
+        showResourcePreviews: true,
+        showReferences: true
+    };
+    let savedScrollTop = 0;
+    let resourceFileMap = {};
+    const assetPreviewCache = {};
 
     const UI_STRINGS = {
         zh: {
@@ -159,6 +170,8 @@
     document.addEventListener('DOMContentLoaded', () => {
         $('selectBtn').addEventListener('click', () => send({ type: 'select' }));
         $('refreshBtn').addEventListener('click', () => send({ type: 'refresh' }));
+        const settingsBtn = $('settingsBtn');
+        if (settingsBtn) settingsBtn.addEventListener('click', () => send({ type: 'openSettings' }));
         $('langBtn').addEventListener('click', () => {
             currentLang = currentLang === 'zh' ? 'en' : 'zh';
             const btn = $('langBtn');
@@ -313,11 +326,34 @@
 
     window.addEventListener('message', (event) => {
         const message = event.data;
-        if (!message || message.type !== 'state') return;
+        if (!message) return;
+        if (message.type === 'assetPreview') {
+            assetPreviewCache[message.filePath] = message.dataUri;
+            const imgs = document.querySelectorAll('img[data-resource-preview-path]');
+            for (const img of imgs) {
+                if (img.getAttribute('data-resource-preview-path') === message.filePath) {
+                    img.src = message.dataUri;
+                    img.removeAttribute('data-resource-preview-path');
+                }
+            }
+            return;
+        }
+        if (message.type !== 'state') return;
 
         state.model = message.model || { roots: [], namespaces: [], assets: [], errors: [] };
         if (!Array.isArray(state.model.assets)) {
             state.model.assets = [];
+        }
+        if (state.model.settings) {
+            settings = Object.assign({}, settings, state.model.settings);
+        }
+        resourceFileMap = {};
+        for (const nsAsset of state.model.assets || []) {
+            for (const cat of nsAsset.categories || []) {
+                for (const file of cat.files || []) {
+                    resourceFileMap[`${file.namespace}:${file.relativePath}`] = file.filePath;
+                }
+            }
         }
         if (!currentNamespace || !state.model.namespaces.some(ns => ns.namespace === currentNamespace)) {
             currentNamespace = state.model.namespaces.length > 0 ? state.model.namespaces[0].namespace : null;
@@ -419,6 +455,25 @@
         return `<button class="add-file-btn" data-kind="${esc(kind)}" data-namespace="${esc(namespace)}">${t('addFile')}</button>`;
     }
 
+    function categorySection(id, title, content, open = true) {
+        return `<details id="${esc(id)}" class="category-section" ${open ? 'open' : ''}><summary>${title}</summary><div class="category-section-body">${content}</div></details>`;
+    }
+
+    function categoryNavHtml() {
+        const items = [
+            ['category-species', '🐲 ' + t('species')],
+            ['category-stages', '📈 ' + t('stages')],
+            ['category-abilities', '⚡ ' + t('abilities')],
+            ['category-penalties', '⚠️ ' + t('penalties')],
+            ['category-projectiles', '🎯 ' + t('projectiles')],
+            ['category-bodies', '🦴 ' + t('bodies')],
+            ['category-data', '🗂️ 数据映射'],
+            ['category-tags', '🏷️ ' + t('tags')],
+            ['category-assets', '📦 ' + t('resourcePack')]
+        ];
+        return `<div class="category-nav">${items.map(([id, label]) => `<button class="category-nav-btn" data-target="${esc(id)}">${esc(label)}</button>`).join('')}</div>`;
+    }
+
     function renderOverview() {
         const container = $('overview');
         const ns = getCurrentNamespace();
@@ -452,124 +507,133 @@
         const bodyIcons = getEntries(globalNs, 'body_icons');
         const globalTags = globalNs.tags || [];
 
-        let html = '';
+        let html = categoryNavHtml();
 
         // Species overview
-        html += `<div class="section-title">🐲 ${t('species')} (${species.length}) ${renderAddFileButton('dragon_species', ns.namespace)}</div>`;
-        if (species.length === 0) {
-            html += `<div class="empty-state">未定义 dragon_species</div>`;
-        } else {
-            html += `<div class="card-grid">`;
-            for (const entry of species) {
-                html += renderSpeciesCard(entry);
-            }
-            html += `</div>`;
-        }
+        html += categorySection('category-species', `🐲 ${t('species')} (${species.length}) ${renderAddFileButton('dragon_species', ns.namespace)}`, (() => {
+            if (species.length === 0) return `<div class="empty-state">未定义 dragon_species</div>`;
+            return `<div class="card-grid">${species.map(entry => renderSpeciesCard(entry)).join('')}</div>`;
+        })());
 
         // Stage overview
-        html += `<div class="section-title">📈 ${t('stages')} (${stages.length}) ${renderAddFileButton('dragon_stage', ns.namespace)}</div>`;
-        html += renderEntryGrid(stages, (entry) => {
-            const d = entry.data || {};
-            const range = d.growth_range || {};
-            const ticks = d.ticks_until_grown;
-            return `
-                <div class="card" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
-                    <div class="card-header">
-                        <span class="card-title">${esc(entry.id)}</span>
-                        ${d.is_default ? '<span class="badge">默认</span>' : ''}
-                        <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
-                    </div>
-                    <div class="card-subtitle">成长范围 ${fmt(range.min)} ~ ${fmt(range.max)}</div>
-                    <div class="card-subtitle">成熟耗时 ${formatTicks(ticks)}</div>
-                    <div class="card-subtitle">属性修正 ${(d.modifiers || []).length} 条 · 成长物品 ${(d.growth_items || []).length} 种</div>
-                </div>`;
-        });
+        html += categorySection('category-stages', `📈 ${t('stages')} (${stages.length}) ${renderAddFileButton('dragon_stage', ns.namespace)}`, (() => {
+            return renderEntryGrid(stages, (entry) => {
+                const d = entry.data || {};
+                const range = d.growth_range || {};
+                const ticks = d.ticks_until_grown;
+                return `
+                    <div class="card" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
+                        <div class="card-header">
+                            <span class="card-title">${entryTitle(entry)}</span>
+                            ${d.is_default ? '<span class="badge">默认</span>' : ''}
+                            <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
+                        </div>
+                        <div class="card-subtitle">成长范围 ${fmt(range.min)} ~ ${fmt(range.max)}</div>
+                        <div class="card-subtitle">成熟耗时 ${formatTicks(ticks)}</div>
+                        <div class="card-subtitle">属性修正 ${(d.modifiers || []).length} 条 · 成长物品 ${(d.growth_items || []).length} 种</div>
+                    </div>`;
+            });
+        })());
 
         // Ability overview
-        html += `<div class="section-title">⚡ ${t('abilities')} (${abilities.length}) ${renderAddFileButton('dragon_ability', ns.namespace)}</div>`;
-        html += renderEntryGrid(abilities, (entry) => {
-            const d = entry.data || {};
-            const activation = d.activation || {};
-            const upgrade = d.upgrade || {};
-            return `
-                <div class="card" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
-                    <div class="card-header">
-                        <span class="card-title">${esc(entry.id)}</span>
-                        <span class="badge">${esc(activation.activation_type || 'unknown')}</span>
-                        <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
-                    </div>
-                    <div class="card-subtitle">最大等级 ${upgrade.maximum_level ?? 1}</div>
-                    ${activation.cooldown ? `<div class="card-subtitle">冷却 ${activation.cooldown} tick</div>` : ''}
-                    ${activation.cast_time ? `<div class="card-subtitle">施法 ${activation.cast_time} tick</div>` : ''}
-                    <div class="card-subtitle">动作 ${(d.actions || []).length} 组</div>
-                </div>`;
-        });
+        html += categorySection('category-abilities', `⚡ ${t('abilities')} (${abilities.length}) ${renderAddFileButton('dragon_ability', ns.namespace)}`, (() => {
+            return renderEntryGrid(abilities, (entry) => {
+                const d = entry.data || {};
+                const activation = d.activation || {};
+                const upgrade = d.upgrade || {};
+                return `
+                    <div class="card" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
+                        <div class="card-header">
+                            <span class="card-title">${entryTitle(entry)}</span>
+                            <span class="badge">${esc(activation.activation_type || 'unknown')}</span>
+                            <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
+                        </div>
+                        <div class="card-subtitle">最大等级 ${upgrade.maximum_level ?? 1}</div>
+                        ${activation.cooldown ? `<div class="card-subtitle">冷却 ${activation.cooldown} tick</div>` : ''}
+                        ${activation.cast_time ? `<div class="card-subtitle">施法 ${activation.cast_time} tick</div>` : ''}
+                        <div class="card-subtitle">动作 ${(d.actions || []).length} 组</div>
+                    </div>`;
+            });
+        })());
 
         // Penalty overview
-        html += `<div class="section-title">⚠️ ${t('penalties')} (${penalties.length}) ${renderAddFileButton('dragon_penalty', ns.namespace)}</div>`;
-        html += renderEntryGrid(penalties, (entry) => {
-            const d = entry.data || {};
-            const effect = d.effect || {};
-            const trigger = d.trigger || {};
-            return `
-                <div class="card" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
-                    <div class="card-header">
-                        <span class="card-title">${esc(entry.id)}</span>
-                        <span class="badge">${esc(effect.penalty_type || 'unknown')}</span>
-                        <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
-                    </div>
-                    <div class="card-subtitle">触发 ${esc(trigger.penalty_trigger || 'unknown')}</div>
-                    <div class="card-subtitle">恢复物品 ${countRecoveryItems(d)} 种</div>
-                </div>`;
-        });
+        html += categorySection('category-penalties', `⚠️ ${t('penalties')} (${penalties.length}) ${renderAddFileButton('dragon_penalty', ns.namespace)}`, (() => {
+            return renderEntryGrid(penalties, (entry) => {
+                const d = entry.data || {};
+                const effect = d.effect || {};
+                const trigger = d.trigger || {};
+                return `
+                    <div class="card" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
+                        <div class="card-header">
+                            <span class="card-title">${entryTitle(entry)}</span>
+                            <span class="badge">${esc(effect.penalty_type || 'unknown')}</span>
+                            <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
+                        </div>
+                        <div class="card-subtitle">触发 ${esc(trigger.penalty_trigger || 'unknown')}</div>
+                        <div class="card-subtitle">恢复物品 ${countRecoveryItems(d)} 种</div>
+                    </div>`;
+            });
+        })());
 
         // Projectile overview
-        html += `<div class="section-title">🎯 ${t('projectiles')} (${projectiles.length}) ${renderAddFileButton('projectile_data', ns.namespace)}</div>`;
-        html += renderEntryGrid(projectiles, (entry) => {
-            const d = entry.data || {};
-            const g = d.general_data || {};
-            const t = d.type_data || {};
-            const b = t.behaviour_data || {};
-            return `
-                <div class="card" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
-                    <div class="card-header">
-                        <span class="card-title">${esc(entry.id)}</span>
-                        <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
-                    </div>
-                    <div class="card-subtitle">${esc(g.name || '')}</div>
-                    <div class="card-subtitle">最大寿命 ${fmt(b.max_lifespan)} tick · 移动距离 ${fmt(b.max_movement_distance)}</div>
-                </div>`;
-        });
+        html += categorySection('category-projectiles', `🎯 ${t('projectiles')} (${projectiles.length}) ${renderAddFileButton('projectile_data', ns.namespace)}`, (() => {
+            return renderEntryGrid(projectiles, (entry) => {
+                const d = entry.data || {};
+                const g = d.general_data || {};
+                const t = d.type_data || {};
+                const b = t.behaviour_data || {};
+                return `
+                    <div class="card" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
+                        <div class="card-header">
+                            <span class="card-title">${entryTitle(entry)}</span>
+                            <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
+                        </div>
+                        <div class="card-subtitle">${esc(g.name || '')}</div>
+                        <div class="card-subtitle">最大寿命 ${fmt(b.max_lifespan)} tick · 移动距离 ${fmt(b.max_movement_distance)}</div>
+                    </div>`;
+            });
+        })());
 
         // Dragon body / emote set（固定放在 dragonsurvival 命名空间）
-        html += `<div class="section-title">🦴 ${t('bodies')} (${dragonBodies.length}) ${renderAddFileButton('dragon_body', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(dragonBodies, (entry) => renderSimpleDataCard(entry));
-        html += `<div class="section-title">😀 ${t('emotes')} (${dragonEmotes.length}) ${renderAddFileButton('dragon_emote_set', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(dragonEmotes, (entry) => renderSimpleDataCard(entry));
+        html += categorySection('category-bodies', `🦴 ${t('bodies')} (${dragonBodies.length}) · 😀 ${t('emotes')} (${dragonEmotes.length})`, (() => {
+            return `
+                <div class="section-title">🦴 ${t('bodies')} (${dragonBodies.length}) ${renderAddFileButton('dragon_body', globalNs.namespace)}</div>
+                ${renderEntryGrid(dragonBodies, (entry) => renderSimpleDataCard(entry))}
+                <div class="section-title">😀 ${t('emotes')} (${dragonEmotes.length}) ${renderAddFileButton('dragon_emote_set', globalNs.namespace)}</div>
+                ${renderEntryGrid(dragonEmotes, (entry) => renderSimpleDataCard(entry))}
+            `;
+        })());
 
         // Data maps（固定放在 dragonsurvival 命名空间）
-        html += `<div class="section-title">🍖 ${t('dietEntries')} (${dietEntries.length}) ${renderAddFileButton('diet_entries', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(dietEntries, (entry) => renderSimpleDataCard(entry));
-        html += `<div class="section-title">🎨 ${t('stageResources')} (${stageResources.length}) ${renderAddFileButton('stage_resources', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(stageResources, (entry) => renderSimpleDataCard(entry));
-        html += `<div class="section-title">🌌 ${t('endPlatforms')} (${endPlatforms.length}) ${renderAddFileButton('end_platforms', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(endPlatforms, (entry) => renderSimpleDataCard(entry));
-        html += `<div class="section-title">✨ ${t('beaconData')} (${beaconData.length}) ${renderAddFileButton('dragon_beacon_data', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(beaconData, (entry) => renderSimpleDataCard(entry));
-        html += `<div class="section-title">🧩 ${t('bodyIcons')} (${bodyIcons.length}) ${renderAddFileButton('body_icons', globalNs.namespace)}</div>`;
-        html += renderEntryGrid(bodyIcons, (entry) => renderSimpleDataCard(entry));
+        html += categorySection('category-data', `🗂️ ${t('dietEntries')} / ${t('stageResources')} / ${t('endPlatforms')} / ${t('beaconData')} / ${t('bodyIcons')}`, (() => {
+            return `
+                <div class="section-title">🍖 ${t('dietEntries')} (${dietEntries.length}) ${renderAddFileButton('diet_entries', globalNs.namespace)}</div>
+                ${renderEntryGrid(dietEntries, (entry) => renderSimpleDataCard(entry))}
+                <div class="section-title">🎨 ${t('stageResources')} (${stageResources.length}) ${renderAddFileButton('stage_resources', globalNs.namespace)}</div>
+                ${renderEntryGrid(stageResources, (entry) => renderSimpleDataCard(entry))}
+                <div class="section-title">🌌 ${t('endPlatforms')} (${endPlatforms.length}) ${renderAddFileButton('end_platforms', globalNs.namespace)}</div>
+                ${renderEntryGrid(endPlatforms, (entry) => renderSimpleDataCard(entry))}
+                <div class="section-title">✨ ${t('beaconData')} (${beaconData.length}) ${renderAddFileButton('dragon_beacon_data', globalNs.namespace)}</div>
+                ${renderEntryGrid(beaconData, (entry) => renderSimpleDataCard(entry))}
+                <div class="section-title">🧩 ${t('bodyIcons')} (${bodyIcons.length}) ${renderAddFileButton('body_icons', globalNs.namespace)}</div>
+                ${renderEntryGrid(bodyIcons, (entry) => renderSimpleDataCard(entry))}
+            `;
+        })());
 
         // Tags（固定放在 dragonsurvival 命名空间）
-        html += `<div class="section-title">🏷️ ${t('tags')} (${globalTags.length})</div>`;
-        html += globalTags.length ? `<div class="card-grid">${globalTags.map(tag => renderTagCard(tag)).join('')}</div>` : `<div class="empty-state">${t('noTags')}</div>`;
+        html += categorySection('category-tags', `🏷️ ${t('tags')} (${globalTags.length})`, (() => {
+            return globalTags.length ? `<div class="card-grid">${globalTags.map(tag => renderTagCard(tag)).join('')}</div>` : `<div class="empty-state">${t('noTags')}</div>`;
+        })());
 
         // Resource pack (assets)
         const assetNamespaces = state.model.assets || [];
         const nsWord = currentLang === 'zh' ? '个命名空间' : t('assetNamespaces');
-        html += `<div class="section-title">📦 ${t('resourcePack')} (${assetNamespaces.length} ${nsWord})</div>`;
-        html += assetNamespaces.length
-            ? `<div class="card-grid">${assetNamespaces.map(nsAsset => renderAssetNamespaceCard(nsAsset)).join('')}</div>`
-            : `<div class="empty-state">${t('noAssets')}</div>`;
+        html += categorySection('category-assets', `📦 ${t('resourcePack')} (${assetNamespaces.length} ${nsWord})`, (() => {
+            return assetNamespaces.length
+                ? `<div class="card-grid">${assetNamespaces.map(nsAsset => renderAssetNamespaceCard(nsAsset)).join('')}</div>`
+                : `<div class="empty-state">${t('noAssets')}</div>`;
+        })());
+
 
 
 
@@ -582,16 +646,27 @@
         }
 
         container.innerHTML = html;
+
+        const navButtons = container.querySelectorAll('.category-nav-btn');
+        for (const btn of navButtons) {
+            btn.addEventListener('click', () => {
+                const target = document.getElementById(btn.getAttribute('data-target') || '');
+                if (target) {
+                    if (target.tagName === 'DETAILS') target.open = true;
+                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        }
     }
 
     function renderSimpleDataCard(entry) {
         return `
             <div class="card" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
                 <div class="card-header">
-                    <span class="card-title">${esc(kindLabel(entry.kind))}</span>
+                    <span class="card-title">${kindLabel(entry.kind)}</span>
                     <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
                 </div>
-                <div class="card-subtitle">${esc(entry.id)}</div>
+                <div class="card-subtitle">${entryTitle(entry)}</div>
                 <div class="card-subtitle">${esc(entry.filePath)}</div>
             </div>`;
     }
@@ -663,7 +738,7 @@
         return `
             <div class="card species-card" style="--species-color:${esc(primary)}" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
                 <div class="card-header">
-                    <span class="card-title">${esc(entry.id)}</span>
+                    <span class="card-title">${entryTitle(entry)}</span>
                     <span class="badge">${abilities.length} 能力 · ${penalties.length} 惩罚</span>
                     <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
                 </div>
@@ -692,6 +767,49 @@
 
     // ---------- Detail ----------
 
+    function findReferences(entry) {
+        if (!settings.showReferences) return [];
+        const full = `${entry.namespace}:${entry.id}`;
+        const idOnly = entry.id;
+        const refs = [];
+        const namespaces = state.model.namespaces || [];
+        const entries = namespaces.flatMap(ns => ns.entries || []);
+
+        for (const ns of namespaces) {
+            for (const tag of ns.tags || []) {
+                if (tag.registry === entry.kind && (tag.values || []).some(v => v === full || v === `#${full}` || v === idOnly)) {
+                    refs.push({ type: 'tag', label: `${tr('标签', 'Tag')} ${tag.id}`, filePath: tag.filePath });
+                }
+            }
+        }
+
+        for (const other of entries) {
+            if (other.filePath === entry.filePath) continue;
+            const raw = JSON.stringify(other.data || '');
+            if (raw.includes(full) || raw.includes(`"${idOnly}"`)) {
+                refs.push({ type: 'entry', label: `${kindLabel(other.kind)} ${other.namespace}:${other.id}`, filePath: other.filePath });
+            }
+        }
+
+        const seen = new Set();
+        return refs.filter(ref => {
+            const key = ref.label + '|' + ref.filePath;
+            if (seen.has(key)) return false;
+            seen.add(key);
+            return true;
+        });
+    }
+
+    function renderReferenceSection(entry) {
+        const refs = findReferences(entry);
+        if (refs.length === 0) return '';
+        return `
+            <div class="section-title">🔗 ${tr('引用', 'References')} (${refs.length})</div>
+            <div class="ref-list">
+                ${refs.map(ref => `<div class="ref-item"><span class="ref-label">${esc(ref.label)}</span><span class="ref-path">${esc(ref.filePath)}</span></div>`).join('')}
+            </div>`;
+    }
+
     function renderDetail(entry) {
         const container = $('detail');
         let body = '';
@@ -713,12 +831,13 @@
         container.innerHTML = `
             <div class="detail-header">
                 <button class="back-button" id="backBtn">${esc(t('back'))}</button>
-                <h2>${esc(entry.id)}</h2>
+                <h2>${entryTitle(entry)}</h2>
                 <span class="badge">${esc(entry.kind)}</span>
                 <button class="back-button" id="openFileBtn">${esc(t('openFile'))}</button>
                 <button class="back-button primary" id="editBtn">${esc(t('editJson'))}</button>
             </div>
             <div class="detail-path">${esc(entry.filePath)}</div>
+            ${renderReferenceSection(entry)}
             ${body}
             <details>
                 <summary>查看原始 JSON</summary>
@@ -728,6 +847,9 @@
         $('backBtn').addEventListener('click', () => {
             currentDetail = null;
             renderAll();
+            if (settings.rememberScrollPosition) {
+                window.scrollTo(0, savedScrollTop);
+            }
         });
         $('openFileBtn').addEventListener('click', () => send({ type: 'openFile', filePath: entry.filePath }));
         $('editBtn').addEventListener('click', () => openEditor(entry));
@@ -739,6 +861,8 @@
         } else if (entry.kind === 'dragon_ability') {
             bindAbilityEditorHandlers(entry);
         }
+
+        requestResourcePreviews(container);
     }
 
     function renderSpeciesDetail(entry) {
@@ -924,8 +1048,20 @@
         return `
             ${rootPalette ? `<div class="section-title">${esc(tr('可选字段', 'Optional Fields'))}</div>` : ''}
             ${rootPalette}
+            <div class="section-title">${esc(t('actions'))} (${actions.length})</div>
+            ${actions.length ? actions.map((action, i) => `
+                <div class="action-block" data-action-index="${i}">
+                    <div class="action-header">
+                        <span>动作 ${i + 1}</span>
+                        <button class="delete-action-btn" data-action-index="${i}" title="删除该动作">🗑</button>
+                    </div>
+                    ${renderStructuredForm(action, 0, ['actions', i])}
+                </div>`).join('') : '<div class="empty-state">暂无动作，点击下方按钮添加</div>'}
+            <button id="addActionBtn" class="back-button primary" style="margin-top: 4px">${esc(t('addAction'))}</button>
             <div class="section-title">${esc(t('activation'))}</div>
             <div class="ability-editor">${renderStructuredForm(activation, 0, ['activation'])}</div>
+            <div class="section-title">${esc(t('icon'))}</div>
+            ${renderStructuredForm(icon, 0, ['icon'])}
             ${d.upgrade ? `<div class="section-title">${esc(t('upgrade'))}
                 <button class="delete-field-btn" data-map-path="${encodeURIComponent(JSON.stringify([]))}" data-field-key="upgrade" title="删除字段">🗑</button>
             </div>
@@ -948,18 +1084,6 @@
                         </select>
                     </div>
                 </div>` : ''}
-            <div class="section-title">${esc(t('icon'))}</div>
-            ${renderStructuredForm(icon, 0, ['icon'])}
-            <div class="section-title">${esc(t('actions'))} (${actions.length})</div>
-            ${actions.length ? actions.map((action, i) => `
-                <div class="action-block" data-action-index="${i}">
-                    <div class="action-header">
-                        <span>动作 ${i + 1}</span>
-                        <button class="delete-action-btn" data-action-index="${i}" title="删除该动作">🗑</button>
-                    </div>
-                    ${renderStructuredForm(action, 0, ['actions', i])}
-                </div>`).join('') : '<div class="empty-state">暂无动作，点击下方按钮添加</div>'}
-            <button id="addActionBtn" class="back-button primary" style="margin-top: 4px">${esc(t('addAction'))}</button>
             <button id="saveAbilityBtn" class="back-button primary" style="margin-top: 12px">${esc(t('saveMod'))}</button>
         `;
 
@@ -1222,7 +1346,7 @@
                 if (Array.isArray(val)) {
                     return `
                         <div class="form-row">
-                            <span class="form-label">${esc(label)}</span>
+                            ${fieldLabel(key)}
                             <span class="form-badge">${val.length}</span>
                             ${deleteBtn}
                         </div>
@@ -1232,7 +1356,7 @@
                 if (val && typeof val === 'object') {
                     return `
                         <div class="form-row">
-                            <span class="form-label">${esc(label)}</span>
+                            ${fieldLabel(key)}
                             ${deleteBtn}
                         </div>
                         <div class="form-card">${renderStructuredForm(val, depth + 1, childPath)}</div>`;
@@ -1262,12 +1386,12 @@
                 } else if (typeof val === 'number') {
                     fieldControl = `<input type="number" class="form-input st-edit-field" data-edit-path="${fieldPath}" step="0.01" value="${esc(val)}">`;
                 } else {
-                    fieldControl = `<input type="text" class="form-input st-edit-field" data-edit-path="${fieldPath}" value="${esc(val)}">`;
+                    fieldControl = `<input type="text" class="form-input st-edit-field" data-edit-path="${fieldPath}" value="${esc(val)}">${resourcePreviewHtml(String(val))}`;
                 }
 
                 return `
                     <div class="form-field">
-                        <span class="form-label">${esc(label)}</span>
+                        ${fieldLabel(key)}
                         <span class="field-control-row">${fieldControl}${deleteBtn}</span>
                     </div>`;
             }).join('')}${renderFieldPalette(path, value, isProperties, isDietEntryRoot, schemaAddable)}</div>`;
@@ -1993,6 +2117,13 @@
         return spaced.charAt(0).toUpperCase() + spaced.slice(1);
     }
 
+    function fieldLabel(key) {
+        if (settings.showRawFieldKeys) {
+            return `<span class="form-label">${esc(humanizeKey(key))} <span class="raw-key">${esc(key)}</span></span>`;
+        }
+        return `<span class="form-label">${esc(humanizeKey(key))}</span>`;
+    }
+
     function formatValue(value) {
         if (Array.isArray(value)) {
             return value.join(', ');
@@ -2205,6 +2336,68 @@
             .replace(/>/g, '&gt;')
             .replace(/"/g, '&quot;')
             .replace(/'/g, '&#39;');
+    }
+
+    function localizedName(entry) {
+        if (!settings.showLocalizedNames) return null;
+        const names = (state.model && state.model.localizedNames) || {};
+        const candidates = [
+            `${entry.kind}.${entry.namespace}.${entry.id}`,
+            `dragon_${entry.kind}.${entry.namespace}.${entry.id}`
+        ];
+        for (const key of candidates) {
+            if (names[key]) return names[key];
+        }
+        return null;
+    }
+
+    function entryTitle(entry) {
+        const name = localizedName(entry);
+        if (name) {
+            return `<span class="localized-name">${esc(name)}</span> <span class="entry-id">${esc(entry.id)}</span>`;
+        }
+        return esc(entry.id);
+    }
+
+    function findAssetFilePath(resource) {
+        if (!resource) return null;
+        const candidates = [resource, resource + '.png', resource + '.jpg', resource + '.svg'];
+        for (const candidate of candidates) {
+            if (resourceFileMap[candidate]) return resourceFileMap[candidate];
+            const idx = candidate.indexOf(':');
+            if (idx > 0) {
+                const key = candidate.slice(0, idx) + ':' + candidate.slice(idx + 1);
+                if (resourceFileMap[key]) return resourceFileMap[key];
+            }
+        }
+        return null;
+    }
+
+    function resourcePreviewHtml(value) {
+        if (!settings.showResourcePreviews) return '';
+        if (typeof value !== 'string') return '';
+        const trimmed = value.trim();
+        const hasImageExt = /\.(png|jpe?g|gif|webp|svg)$/i.test(trimmed);
+        const looksLikeResource = /^[a-z0-9_.-]+:[a-z0-9/._-]+$/i.test(trimmed);
+        if (!hasImageExt && !looksLikeResource) return '';
+        const filePath = findAssetFilePath(trimmed);
+        if (!filePath) return '';
+        const cached = assetPreviewCache[filePath];
+        if (cached) {
+            return `<img class="resource-preview-thumb" src="${esc(cached)}" alt="">`;
+        }
+        return `<img class="resource-preview-thumb" data-resource-preview-path="${esc(filePath)}" alt="">`;
+    }
+
+    function requestResourcePreviews(root) {
+        if (!root || !settings.showResourcePreviews) return;
+        const imgs = root.querySelectorAll('img[data-resource-preview-path]');
+        for (const img of imgs) {
+            const filePath = img.getAttribute('data-resource-preview-path');
+            if (filePath && !assetPreviewCache[filePath]) {
+                send({ type: 'getResourcePreview', filePath });
+            }
+        }
     }
 
     function fmt(value) {
@@ -2790,8 +2983,14 @@
     function showDetailByFullId(kind, fullId) {
         const entry = findEntry(kind, fullId);
         if (entry) {
+            if (!currentDetail && settings.rememberScrollPosition) {
+                savedScrollTop = window.scrollY;
+            }
             currentDetail = entry;
             renderAll();
+            if (settings.openJsonOnDetail) {
+                send({ type: 'openFile', filePath: entry.filePath });
+            }
         }
     }
 

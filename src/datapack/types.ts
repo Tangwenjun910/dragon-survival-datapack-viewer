@@ -95,11 +95,22 @@ export interface AssetNamespace {
     }[];
 }
 
+export interface ViewerSettings {
+    openJsonOnDetail: boolean;
+    showLocalizedNames: boolean;
+    showRawFieldKeys: boolean;
+    rememberScrollPosition: boolean;
+    showResourcePreviews: boolean;
+    showReferences: boolean;
+}
+
 export interface DSModel {
     roots: string[];
     namespaces: NamespaceModel[];
     assets: AssetNamespace[];
     errors: FileError[];
+    settings?: ViewerSettings;
+    localizedNames?: Record<string, string>;
 }
 
 export function isRegistryKind(value: string): value is RegistryKind {

@@ -2,7 +2,7 @@ import * as path from 'path';
 import * as fsp from 'fs/promises';
 import * as vscode from 'vscode';
 import { DragonDataProvider } from './DragonDataProvider';
-import { AssetNamespace, DATA_MAP_KINDS, DiscoveredFile, DSModel, RegistryKind } from './datapack/types';
+import { AssetNamespace, DATA_MAP_KINDS, DiscoveredFile, DSModel, RegistryKind, ViewerSettings } from './datapack/types';
 import { findAssetDirectories, scanAssetsDirectory, scanDirectory } from './datapack/scanner';
 import { loadModel } from './datapack/parser';
 import { parseJsonc } from './datapack/jsonc';
@@ -45,8 +45,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
 
     context.subscriptions.push(
+        vscode.commands.registerCommand('dragonSurvivalDatapack.openSettings', () => {
+            void vscode.commands.executeCommand('workbench.action.openSettings', 'dragonSurvivalDatapack');
+        })
+    );
+
+    context.subscriptions.push(
         vscode.workspace.onDidChangeWorkspaceFolders(() => {
             void refresh();
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((event) => {
+            if (event.affectsConfiguration('dragonSurvivalDatapack')) {
+                void refresh();
+            }
         })
     );
 
@@ -56,6 +70,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
 export function deactivate(): void {
     // Nothing to clean up.
+}
+
+function getSettings(): ViewerSettings {
+    const config = vscode.workspace.getConfiguration('dragonSurvivalDatapack');
+    return {
+        openJsonOnDetail: config.get<boolean>('openJsonOnDetail', true),
+        showLocalizedNames: config.get<boolean>('showLocalizedNames', true),
+        showRawFieldKeys: config.get<boolean>('showRawFieldKeys', true),
+        rememberScrollPosition: config.get<boolean>('rememberScrollPosition', true),
+        showResourcePreviews: config.get<boolean>('showResourcePreviews', true),
+        showReferences: config.get<boolean>('showReferences', true)
+    };
 }
 
 async function refresh(): Promise<void> {
@@ -81,8 +107,15 @@ async function refresh(): Promise<void> {
         console.error('Failed to collect assets:', error);
     }
 
+    let localizedNames: Record<string, string> = {};
+    try {
+        localizedNames = await collectLocalizedNames();
+    } catch (error) {
+        console.error('Failed to collect localized names:', error);
+    }
+
     if (files.length === 0) {
-        currentModel = { roots: [], namespaces: [], assets, errors: [] };
+        currentModel = { roots: [], namespaces: [], assets, errors: [], settings: getSettings(), localizedNames };
         provider?.setModel(currentModel);
         return;
     }
@@ -91,13 +124,15 @@ async function refresh(): Promise<void> {
     try {
         model = await loadModel(files);
     } catch (error) {
-        currentModel = { roots: [], namespaces: [], assets, errors: [{ filePath: '', message: String(error) }] };
+        currentModel = { roots: [], namespaces: [], assets, errors: [{ filePath: '', message: String(error) }], settings: getSettings(), localizedNames };
         vscode.window.showErrorMessage(`解析数据包失败: ${error instanceof Error ? error.message : String(error)}`);
         provider?.setModel(currentModel);
         return;
     }
 
     model.assets = assets;
+    model.settings = getSettings();
+    model.localizedNames = localizedNames;
     currentModel = model;
     provider?.setModel(model);
 }
@@ -122,6 +157,70 @@ async function collectAssets(): Promise<AssetNamespace[]> {
     for (const dir of dirs) {
         result.push(...await scanAssetsDirectory(dir));
     }
+    return result;
+}
+
+async function collectLocalizedNames(): Promise<Record<string, string>> {
+    const result: Record<string, string> = {};
+    const dirs = new Set<string>();
+    const folders = vscode.workspace.workspaceFolders ?? [];
+
+    for (const folder of folders) {
+        for (const dir of await findAssetDirectories(folder.uri.fsPath)) {
+            dirs.add(dir);
+        }
+    }
+
+    if (manualPath) {
+        for (const dir of await findAssetDirectories(manualPath)) {
+            dirs.add(dir);
+        }
+    }
+
+    const langFiles: string[] = [];
+    for (const assetsDir of dirs) {
+        try {
+            const nsEntries = await fsp.readdir(assetsDir, { withFileTypes: true });
+            for (const ns of nsEntries) {
+                if (!ns.isDirectory()) continue;
+                const langDir = path.join(assetsDir, ns.name, 'lang');
+                try {
+                    const files = await fsp.readdir(langDir, { withFileTypes: true });
+                    for (const f of files) {
+                        if (f.isFile() && f.name.endsWith('.json')) {
+                            langFiles.push(path.join(langDir, f.name));
+                        }
+                    }
+                } catch {
+                    // No lang directory for this namespace.
+                }
+            }
+        } catch {
+            // Skip unreadable asset directory.
+        }
+    }
+
+    const preferred = ['zh_cn', 'en_us'];
+    langFiles.sort((a, b) => {
+        const an = path.basename(a).replace(/\.json$/i, '').toLowerCase();
+        const bn = path.basename(b).replace(/\.json$/i, '').toLowerCase();
+        const ai = preferred.indexOf(an);
+        const bi = preferred.indexOf(bn);
+        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
+    });
+
+    for (const file of langFiles) {
+        try {
+            const text = await fsp.readFile(file, 'utf-8');
+            const data = parseJsonc<Record<string, string>>(text);
+            if (data && typeof data === 'object') {
+                Object.assign(result, data);
+            }
+        } catch {
+            // Skip broken lang file.
+        }
+    }
+
     return result;
 }
 

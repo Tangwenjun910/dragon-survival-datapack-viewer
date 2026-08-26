@@ -858,3 +858,107 @@ pre.raw {
 .hidden {
     display: none !important;
 }
+
+.localized-name {
+    color: var(--vscode-foreground, #cccccc);
+    font-weight: 600;
+}
+
+.entry-id {
+    font-size: 10px;
+    color: var(--vscode-descriptionForeground, #9d9d9d);
+    font-family: var(--vscode-editor-font-family, Consolas, monospace);
+}
+
+.category-nav {
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    padding: 6px;
+    background: var(--vscode-sideBar-background, #1e1e1e);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    margin-bottom: 8px;
+}
+
+.category-nav-btn {
+    background: var(--vscode-button-secondaryBackground, #3a3d41);
+    color: var(--vscode-button-secondaryForeground, #cccccc);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 11px;
+    padding: 3px 8px;
+    cursor: pointer;
+}
+
+.category-nav-btn:hover {
+    border-color: var(--accent);
+}
+
+.category-section {
+    margin: 6px 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--vscode-sideBarSectionHeader-background, rgba(255,255,255,0.02));
+}
+
+.category-section > summary {
+    padding: 6px 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--vscode-foreground, #cccccc);
+}
+
+.category-section-body {
+    padding: 4px 8px 8px;
+}
+
+.raw-key {
+    font-size: 10px;
+    color: var(--vscode-descriptionForeground, #9d9d9d);
+    font-family: var(--vscode-editor-font-family, Consolas, monospace);
+    margin-left: 4px;
+}
+
+.ref-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin: 4px 0 8px;
+}
+
+.ref-item {
+    display: flex;
+    flex-direction: column;
+    background: var(--vscode-input-background, #3c3c3c);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    word-break: break-all;
+}
+
+.ref-label {
+    font-weight: 600;
+}
+
+.ref-path {
+    color: var(--vscode-descriptionForeground, #9d9d9d);
+    font-family: var(--vscode-editor-font-family, Consolas, monospace);
+}
+
+.resource-preview-thumb {
+    display: inline-block;
+    vertical-align: middle;
+    width: 28px;
+    height: 28px;
+    object-fit: contain;
+    margin-left: 6px;
+    background: var(--vscode-input-background, #2d2d2d);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    image-rendering: pixelated;
+}

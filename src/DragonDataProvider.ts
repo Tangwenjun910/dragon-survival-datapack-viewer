@@ -1,3 +1,4 @@
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { DSModel } from './datapack/types';
 
@@ -76,6 +77,27 @@ export class DragonDataProvider implements vscode.WebviewViewProvider {
             case 'refresh':
                 await this._handlers.onRefresh();
                 break;
+            case 'openSettings':
+                await vscode.commands.executeCommand('workbench.action.openSettings', 'dragonSurvivalDatapack');
+                break;
+            case 'getResourcePreview': {
+                const filePath = String(message.filePath ?? '');
+                if (!filePath) break;
+                try {
+                    const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
+                    const ext = path.extname(filePath).toLowerCase();
+                    const mime = ext === '.jpg' || ext === '.jpeg' ? 'image/jpeg'
+                        : ext === '.gif' ? 'image/gif'
+                        : ext === '.webp' ? 'image/webp'
+                        : ext === '.svg' ? 'image/svg+xml'
+                        : 'image/png';
+                    const dataUri = `data:${mime};base64,${Buffer.from(bytes).toString('base64')}`;
+                    this.postMessage({ type: 'assetPreview', filePath: filePath, dataUri });
+                } catch (error) {
+                    this.postMessage({ type: 'assetPreview', filePath, dataUri: '' });
+                }
+                break;
+            }
             case 'openFile': {
                 const filePath = String(message.filePath ?? '');
                 if (filePath) {
@@ -111,7 +133,7 @@ export class DragonDataProvider implements vscode.WebviewViewProvider {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; img-src ${webview.cspSource} data:; script-src 'nonce-${nonce}';">
     <link rel="stylesheet" href="${styleUri}">
     <title>龙之生存数据包</title>
 </head>
@@ -126,6 +148,7 @@ export class DragonDataProvider implements vscode.WebviewViewProvider {
             <div class="toolbar">
                 <button id="selectBtn" title="选择数据包目录">📂 选择目录</button>
                 <button id="refreshBtn" title="重新扫描">🔄 刷新</button>
+                <button id="settingsBtn" title="打开扩展设置">⚙ 设置</button>
             </div>
             <div id="roots" class="roots"></div>
             <div id="status" class="status"></div>

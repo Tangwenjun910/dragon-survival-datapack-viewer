@@ -127,6 +127,172 @@
         return currentLang === 'zh' ? zh : en;
     }
 
+    const UI_EN_ZH_MAP = {
+        '未定义 dragon_species': 'No dragon_species defined',
+        '暂无动作，点击下方按钮添加': 'No actions. Click below to add.',
+        '空对象': 'Empty object',
+        '可添加字段': 'Addable fields',
+        '全部字段': 'All fields',
+        '食物悬浮框颜色': 'Food Tooltip Hover Colors',
+        '保存颜色': 'Save Colors',
+        '龙种引用': 'Species References',
+        '阶段链': 'Stage Chain',
+        '未配置': 'Not configured',
+        '默认': 'Default',
+        '最大等级': 'Max Level',
+        '动作': 'Actions',
+        '删除该动作': 'Delete action',
+        '添加动作': 'Add action',
+        '使用限制': 'Usage Blocked',
+        '可选字段': 'Optional Fields',
+        '查看原始 JSON': 'View Raw JSON',
+        '引用': 'References',
+        '标签': 'Tag',
+        '解析错误': 'Parse Errors',
+        '属性修正': 'Modifiers',
+        '成长物品': 'Growth Items',
+        '目标选择': 'Target Selection',
+        '目标类型': 'Target Type',
+        '范围倍率': 'Range Multiplier',
+        '应用效果': 'Applied Effects',
+        '实体效果': 'Entity Effects',
+        '方块效果': 'Block Effects',
+        '效果类型': 'Effect Type',
+        '目标条件': 'Target Conditions',
+        '目标模式': 'Targeting Mode',
+        '触发点': 'Trigger Point',
+        '触发频率': 'Trigger Rate',
+        '激活类型': 'Activation Type',
+        '初始魔力消耗': 'Initial Mana Cost',
+        '持续魔力消耗': 'Continuous Mana Cost',
+        '施法时间': 'Cast Time',
+        '冷却': 'Cooldown',
+        '最大持续时间': 'Max Duration',
+        '移动时施法': 'Can Move While Casting',
+        '通知': 'Notification',
+        '声音': 'Sound',
+        '动画': 'Animations',
+        '升级类型': 'Upgrade Type',
+        '等级要求': 'Level Requirement',
+        '经验消耗': 'Experience Cost',
+        '成长要求': 'Growth Requirement',
+        '条件': 'Condition',
+        '需要前置': 'Require Previous',
+        '数值': 'Amount',
+        '基础值': 'Base',
+        '每级增加': 'Per Level',
+        '数值表': 'Level Values',
+        '图标': 'Icon',
+        '图标纹理': 'Icon Textures',
+        '起始等级': 'From Level',
+        '纹理资源': 'Texture Resource',
+        '移动速度': 'Movement Speed',
+        '伤害': 'Damage',
+        '药水效果': 'Potion Effect',
+        '概率': 'Probability',
+        '持续时间': 'Duration',
+        '等级': 'Level',
+        '效果': 'Effect',
+        '实体': 'Entity',
+        '类型': 'Type',
+        'ID': 'ID',
+        '数量': 'Count',
+        '物品': 'Item',
+        '输入': 'Input',
+        '输出': 'Output',
+        '进度': 'Progress',
+        '粒子': 'Particle',
+        '大小': 'Scale',
+        '扩散': 'Spread',
+        '成长速度': 'Speed per Growth',
+        '惩罚类型': 'Penalty Type',
+        '触发类型': 'Trigger Type',
+        '供给类型': 'Supply Type',
+        '减少速率': 'Reduction Rate',
+        '恢复速率': 'Regeneration Rate',
+        '恢复物品': 'Recovery Items',
+        '类似饥饿条显示': 'Show Like Hunger Bar',
+        '触发粒子': 'Trigger Particles',
+        '物品条件': 'Item Conditions',
+        '恢复比例': 'Percent Restored',
+        '伤害类型': 'Damage Types',
+        '恐惧列表': 'Fears',
+        '修改列表': 'Modifications',
+        '函数': 'Function',
+        '激活方式': 'Activation',
+        '食物图标': 'Food Icons',
+        '魔力图标': 'Mana Icons',
+        '祭坛横幅': 'Altar Banner',
+        '能力槽': 'Ability Bar',
+        '成长左箭头': 'Growth Left Arrow',
+        '成长右箭头': 'Growth Right Arrow',
+        '成长水晶': 'Growth Crystal',
+        '食物提示': 'Food Tooltip',
+        '主色': 'Primary Color',
+        '辅色': 'Secondary Color',
+        '爪纹理槽': 'Claw Texture Slot',
+        '保存修改': 'Save Changes',
+        '增加龙种': 'Add Species',
+        '编辑 JSON': 'Edit JSON',
+        '打开文件': 'Open File',
+        '返回': 'Back',
+        '暂无数据': 'No data',
+        '暂无标签': 'No tags',
+        '未发现 assets 资源目录': 'No assets directory found',
+        '阶段属性': 'Stage Attributes',
+        '属性': 'Attribute',
+        '运算': 'Operation',
+        '成长时间': 'Growth Time',
+        '无': 'None',
+        '成长范围': 'Growth Range',
+        '成熟耗时': 'Growth Time',
+        '最大寿命': 'Max Lifespan',
+        '移动距离': 'Movement Distance',
+        '触发': 'Trigger',
+        '能力': 'Abilities',
+        '惩罚': 'Penalties',
+        '阶段': 'Stages',
+        '龙种': 'Species',
+        '资源包': 'Resource Pack',
+        '命名空间': 'Namespaces',
+        '数据映射': 'Data Maps',
+        '食物列表': 'Diet Entries',
+        '阶段资源': 'Stage Resources',
+        '末地平台': 'End Platforms',
+        '祭坛/信标效果': 'Altar/Beacon Effects',
+        '龙体图标': 'Body Icons',
+        '表情组': 'Emote Sets',
+        '龙体': 'Bodies',
+        '弹射物': 'Projectiles',
+        '原始 JSON': 'Raw JSON',
+        '设置': 'Settings',
+        '刷新': 'Refresh',
+        '选择目录': 'Select Folder',
+        '添加文件': 'Add File',
+        '编辑': 'Edit',
+        '删除': 'Delete',
+        '保存': 'Save',
+        '取消': 'Cancel',
+        '关闭': 'Close',
+        '打开设置': 'Open Settings',
+        '可手动禁用': 'Can Be Manually Disabled',
+        '升级': 'Upgrade',
+        '使用限制': 'Usage Blocked',
+        '其他': 'Other',
+        '字段说明（参考 dragon_ability.mcdoc）': 'Field Reference (dragon_ability.mcdoc)',
+        '激活方式': 'Activation',
+        '升级方式': 'Upgrade'
+    };
+
+    function localizeHtml(html) {
+        if (currentLang !== 'en') return html;
+        let result = html;
+        for (const [zh, en] of Object.entries(UI_EN_ZH_MAP)) {
+            result = result.split(zh).join(en);
+        }
+        return result;
+    }
+
     const KIND_LABELS_ZH = {
         dragon_species: '龙种',
         dragon_stage: '阶段',
@@ -645,7 +811,7 @@
             html += `<div class="empty-state">${state.model.errors.map(err => `<div>${esc(err.filePath || '')}: ${esc(err.message)}</div>`).join('')}</div>`;
         }
 
-        container.innerHTML = html;
+        container.innerHTML = localizeHtml(html);
 
         const navButtons = container.querySelectorAll('.category-nav-btn');
         for (const btn of navButtons) {
@@ -828,7 +994,7 @@
         else if (entry.kind === 'body_icons') body = renderBodyIconsDetail(entry);
         else body = `<pre class="raw">${esc(JSON.stringify(entry.data, null, 2))}</pre>`;
 
-        container.innerHTML = `
+        const html = `
             <div class="detail-header">
                 <button class="back-button" id="backBtn">${esc(t('back'))}</button>
                 <h2>${entryTitle(entry)}</h2>
@@ -843,6 +1009,7 @@
                 <summary>查看原始 JSON</summary>
                 <pre class="raw">${esc(JSON.stringify(entry.data, null, 2))}</pre>
             </details>`;
+        container.innerHTML = localizeHtml(html);
 
         $('backBtn').addEventListener('click', () => {
             currentDetail = null;

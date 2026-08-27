@@ -1,0 +1,20 @@
+# VSCode
+/.vscode/
+
+# Minecraft Mod files
+/assets/
+/data/
+/pack.mcmeta
+
+# zip
+/*.zip
+
+# other
+/other
+
+# ico
+/*.ico
+
+# ini
+
+/*.ini

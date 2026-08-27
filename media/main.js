@@ -22,6 +22,62 @@
     let savedScrollTop = 0;
     let resourceFileMap = {};
     const assetPreviewCache = {};
+    const mcdocSchema = window.MCDOC_SCHEMA || null;
+
+    function mcdocStructForKind(kind) {
+        if (!mcdocSchema || !kind) return null;
+        const structName = mcdocSchema.kindToStruct && mcdocSchema.kindToStruct[kind];
+        if (!structName) return null;
+        return mcdocSchema.structs && mcdocSchema.structs[structName] || null;
+    }
+
+    function resolveMcdocStruct(path, obj) {
+        if (!mcdocSchema || !obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+        const dispatch = mcdocSchema.dispatch || {};
+        const structs = mcdocSchema.structs || {};
+        const effectType = typeof obj.effect_type === 'string' ? obj.effect_type : null;
+        const activationType = typeof obj.activation_type === 'string' ? obj.activation_type : null;
+        const upgradeType = typeof obj.upgrade_type === 'string' ? obj.upgrade_type : null;
+        const targetType = typeof obj.target_type === 'string' ? obj.target_type : null;
+        const penaltyType = typeof obj.penalty_type === 'string' ? obj.penalty_type : null;
+        const penaltyTrigger = typeof obj.penalty_trigger === 'string' ? obj.penalty_trigger : null;
+
+        if (effectType && path.includes('entity_effect')) {
+            const name = dispatch['dragonsurvival:ability_entity_effect']?.[effectType];
+            return name ? structs[name] : null;
+        }
+        if (effectType && path.includes('block_effect')) {
+            const name = dispatch['dragonsurvival:ability_block_effect']?.[effectType];
+            return name ? structs[name] : null;
+        }
+        if (activationType && path.includes('activation')) {
+            const name = dispatch['dragonsurvival:activation']?.[activationType];
+            return name ? structs[name] : null;
+        }
+        if (upgradeType && path.includes('upgrade')) {
+            const name = dispatch['dragonsurvival:upgrade_type']?.[upgradeType];
+            return name ? structs[name] : null;
+        }
+        if (targetType && path.includes('target_selection')) {
+            const name = dispatch['dragonsurvival:ability_targeting']?.[targetType];
+            return name ? structs[name] : null;
+        }
+        if (penaltyType && path.includes('effect')) {
+            const name = dispatch['dragonsurvival:penalty_effect']?.[penaltyType];
+            return name ? structs[name] : null;
+        }
+        if (penaltyTrigger && path.includes('trigger')) {
+            const name = dispatch['dragonsurvival:penalty_trigger']?.[penaltyTrigger];
+            return name ? structs[name] : null;
+        }
+        return null;
+    }
+
+    function getMissingRequiredFields(entry) {
+        const struct = mcdocStructForKind(entry && entry.kind);
+        if (!struct || !entry || !entry.data) return [];
+        return (struct.required || []).filter(key => !Object.prototype.hasOwnProperty.call(entry.data, key));
+    }
 
     const UI_STRINGS = {
         zh: {
@@ -353,6 +409,20 @@
         });
         $('editorText').addEventListener('input', () => {
             $('editorError').textContent = '';
+            refreshCompletionPanel();
+        });
+        $('completionPanel').addEventListener('click', (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return;
+            const btn = target.closest('.completion-item');
+            if (!btn || !editingEntry) return;
+            const insert = btn.getAttribute('data-ins') || '';
+            const ta = $('editorText');
+            const start = ta.selectionStart;
+            const end = ta.selectionEnd;
+            ta.setRangeText(insert, start, end, 'end');
+            ta.focus();
+            refreshCompletionPanel();
         });
 
         $('overview').addEventListener('click', (event) => {
@@ -813,13 +883,22 @@
 
         container.innerHTML = localizeHtml(html);
 
+        const categoryNav = container.querySelector('.category-nav');
+        if (categoryNav) {
+            document.documentElement.style.setProperty('--category-nav-height', categoryNav.offsetHeight + 'px');
+        }
+
         const navButtons = container.querySelectorAll('.category-nav-btn');
         for (const btn of navButtons) {
             btn.addEventListener('click', () => {
                 const target = document.getElementById(btn.getAttribute('data-target') || '');
                 if (target) {
                     if (target.tagName === 'DETAILS') target.open = true;
-                    target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                    const nav = container.querySelector('.category-nav');
+                    const navHeight = nav ? nav.offsetHeight : 0;
+                    const rect = target.getBoundingClientRect();
+                    const scrollTop = rect.top + (window.scrollY || window.pageYOffset) - navHeight - 8;
+                    window.scrollTo({ top: Math.max(0, scrollTop), behavior: 'smooth' });
                 }
             });
         }
@@ -976,6 +1055,19 @@
             </div>`;
     }
 
+    function renderMissingRequiredWarning(entry) {
+        const missing = getMissingRequiredFields(entry);
+        if (missing.length === 0) return '';
+        return `<div class="missing-required">🔴 ${tr('缺少必需字段', 'Missing required fields')}: ${missing.map(k => `<code>${esc(k)}</code>`).join('、')}</div>`;
+    }
+
+    function renderStructMissingWarning(struct, obj) {
+        if (!struct || !obj) return '';
+        const missing = (struct.required || []).filter(key => !Object.prototype.hasOwnProperty.call(obj, key));
+        if (missing.length === 0) return '';
+        return `<div class="missing-required">🔴 ${tr('缺少必需字段', 'Missing required fields')}: ${missing.map(k => `<code>${esc(k)}</code>`).join('、')}</div>`;
+    }
+
     function renderDetail(entry) {
         const container = $('detail');
         let body = '';
@@ -1003,6 +1095,7 @@
                 <button class="back-button primary" id="editBtn">${esc(t('editJson'))}</button>
             </div>
             <div class="detail-path">${esc(entry.filePath)}</div>
+            ${renderMissingRequiredWarning(entry)}
             ${renderReferenceSection(entry)}
             ${body}
             <details>
@@ -1489,13 +1582,15 @@
             const deletableFields = schema && Object.keys(schema.addable).length > 0
                 ? Object.keys(value).filter(field => !schema.required.includes(field))
                 : [];
+            const mdocStruct = resolveMcdocStruct(path, value);
+            const structWarning = renderStructMissingWarning(mdocStruct, value);
 
             if (entries.length === 0) {
                 const lastKey = path[path.length - 1];
                 if (lastKey === 'applied_effects' || (schemaAddable && Object.keys(schemaAddable).length > 0)) {
-                    return `<div class="form-object">${renderFieldPalette(path, value, false, false, schemaAddable)}</div>`;
+                    return `<div class="form-object">${structWarning}${renderFieldPalette(path, value, false, false, schemaAddable)}</div>`;
                 }
-                return '<span class="form-empty">空对象</span>';
+                return structWarning || '<span class="form-empty">空对象</span>';
             }
 
             const isProperties = path.length > 0 && path[path.length - 1] === 'properties';
@@ -1506,13 +1601,19 @@
                 const label = humanizeKey(key);
                 const childPath = [...path, key];
                 const pathStr = encodeURIComponent(JSON.stringify(path));
+                const mdocAllowed = mdocStruct ? new Set([...(mdocStruct.required || []), ...(mdocStruct.optional || [])]) : null;
+                const invalidKey = mdocAllowed && !mdocAllowed.has(key);
+                const invalidValue = isInvalidEnumValue(childPath, key, val);
+                const invalid = invalidKey || invalidValue;
+                const invalidClass = invalid ? ' invalid-field' : '';
+                const invalidTitle = invalid ? ' title="可能存在无效字段或枚举值"' : '';
                 const deleteBtn = canDeleteField && key !== 'items' && (isProperties || isDietEntryRoot || deletableFields.includes(key))
                     ? `<button class="delete-field-btn" data-map-path="${pathStr}" data-field-key="${esc(key)}" title="删除字段">🗑</button>`
                     : '';
 
                 if (Array.isArray(val)) {
                     return `
-                        <div class="form-row">
+                        <div class="form-row${invalidClass}"${invalidTitle}>
                             ${fieldLabel(key)}
                             <span class="form-badge">${val.length}</span>
                             ${deleteBtn}
@@ -1522,7 +1623,7 @@
 
                 if (val && typeof val === 'object') {
                     return `
-                        <div class="form-row">
+                        <div class="form-row${invalidClass}"${invalidTitle}>
                             ${fieldLabel(key)}
                             ${deleteBtn}
                         </div>
@@ -1557,11 +1658,11 @@
                 }
 
                 return `
-                    <div class="form-field">
+                    <div class="form-field${invalidClass}"${invalidTitle}>
                         ${fieldLabel(key)}
                         <span class="field-control-row">${fieldControl}${deleteBtn}</span>
                     </div>`;
-            }).join('')}${renderFieldPalette(path, value, isProperties, isDietEntryRoot, schemaAddable)}</div>`;
+            }).join('')}${structWarning}${renderFieldPalette(path, value, isProperties, isDietEntryRoot, schemaAddable)}</div>`;
         }
 
         return `<div class="form-field"><span class="form-value">${esc(formatValue(value))}</span></div>`;
@@ -1733,6 +1834,10 @@
                 UPGRADE_AUTO_FIELDS[type] || UPGRADE_AUTO_FIELDS['dragonsurvival:experience_points']
             );
             add(fields, ['upgrade_type']);
+        } else if (key === 'usage_blocked') {
+            const conditionType = obj && obj.condition;
+            const conditionFields = (typeof LOOT_CONDITION_AUTO_FIELDS !== 'undefined' && LOOT_CONDITION_AUTO_FIELDS[conditionType]) || {};
+            add(Object.assign({ condition: 'minecraft:random_chance' }, conditionFields), ['condition']);
         } else if (key === 'actions.*') {
             add({ target_selection: { target_type: 'dragonsurvival:self', applied_effects: { entity_effect: [], block_effect: [] } }, trigger_rate: 1, trigger_point: 'default' }, ['target_selection']);
         } else if (key === 'actions.*.target_selection') {
@@ -2291,6 +2396,14 @@
         return `<span class="form-label">${esc(humanizeKey(key))}</span>`;
     }
 
+    function isInvalidEnumValue(path, key, value) {
+        if (typeof value !== 'string') return false;
+        const fieldKey = key === 'effect_type' && path.includes('block_effect') ? 'block_effect_type' : key;
+        const options = ENUM_OPTIONS[fieldKey];
+        if (!options) return false;
+        return !options.some(option => option.value === value);
+    }
+
     function formatValue(value) {
         if (Array.isArray(value)) {
             return value.join(', ');
@@ -2428,6 +2541,99 @@
 
     // ---------- Editor ----------
 
+    function getEditorCompletionItems(entry) {
+        const items = [];
+        const add = (label, insert) => items.push({ label, insert });
+        const kind = entry && entry.kind;
+
+        if (kind === 'dragon_ability') {
+            add('actions', '"actions": [],');
+            add('activation', '"activation": { "activation_type": "dragonsurvival:simple" },');
+            add('icon', '"icon": { "texture_entries": [] },');
+            add('upgrade', '"upgrade": { "upgrade_type": "dragonsurvival:experience_points", "maximum_level": 1 },');
+            add('usage_blocked', '"usage_blocked": { "condition": "minecraft:random_chance", "chance": 0.5 },');
+            add('can_be_manually_disabled', '"can_be_manually_disabled": true,');
+            for (const type of ['passive', 'simple', 'channeled']) {
+                add(`activation_type: ${type}`, `"activation_type": "dragonsurvival:${type}"`);
+            }
+        } else if (kind === 'dragon_species') {
+            add('abilities', '"abilities": "#namespace:id",');
+            add('penalties', '"penalties": "#namespace:id",');
+            add('misc_resources', '"misc_resources": {},');
+            add('starting_growth', '"starting_growth": 0,');
+            add('unlockable_behavior', '"unlockable_behavior": {},');
+            add('mana_handling', '"mana_handling": {},');
+            add('custom_stage_progression', '"custom_stage_progression": "",');
+            add('bodies', '"bodies": "",');
+        } else if (kind === 'dragon_stage') {
+            add('is_default', '"is_default": false,');
+            add('growth_range', '"growth_range": { "min": 0, "max": 100 },');
+            add('ticks_until_grown', '"ticks_until_grown": 216000,');
+            add('modifiers', '"modifiers": [],');
+            add('growth_items', '"growth_items": [],');
+            add('is_natural_growth_stopped', '"is_natural_growth_stopped": {},');
+            add('destruction_data', '"destruction_data": {},');
+        } else if (kind === 'dragon_penalty') {
+            add('effect', '"effect": {},');
+            add('trigger', '"trigger": {},');
+            add('icon', '"icon": "",');
+            add('condition', '"condition": {},');
+        } else if (kind === 'projectile_data') {
+            add('general_data', '"general_data": {},');
+            add('type_data', '"type_data": {},');
+        } else if (kind === 'dragon_body') {
+            add('animation', '"animation": "",');
+            add('is_default', '"is_default": false,');
+            add('modifiers', '"modifiers": [],');
+            add('scaling_proportions', '"scaling_proportions": {},');
+        } else if (kind === 'dragon_emote_set') {
+            add('emotes', '"emotes": [],');
+        }
+
+        return items;
+    }
+
+    function detectEditorValueContext() {
+        const ta = $('editorText');
+        if (!ta) return null;
+        const textBefore = ta.value.substring(0, ta.selectionStart);
+        const match = textBefore.match(/"([A-Za-z_][A-Za-z0-9_]*)"\s*:\s*"([^"]*)$/);
+        return match ? match[1] : null;
+    }
+
+    function getEditorEnumItems(key) {
+        let options = ENUM_OPTIONS[key] || [];
+        if (key === 'effect_type') {
+            options = [
+                ...(ENUM_OPTIONS['effect_type'] || []),
+                ...(ENUM_OPTIONS['block_effect_type'] || [])
+            ];
+        }
+        return options.map(option => ({ label: option.value, insert: option.value }));
+    }
+
+    function refreshCompletionPanel() {
+        const panel = $('completionPanel');
+        if (!panel) return;
+        if (!editingEntry) {
+            panel.hidden = true;
+            return;
+        }
+
+        const enumContextKey = detectEditorValueContext();
+        const items = enumContextKey ? getEditorEnumItems(enumContextKey) : getEditorCompletionItems(editingEntry);
+        const title = enumContextKey ? '可插入枚举值' : '可插入字段';
+
+        if (items.length === 0) {
+            panel.hidden = true;
+            return;
+        }
+        panel.innerHTML = `<div class="completion-title">${esc(title)}</div>` + items.map(item =>
+            `<button class="completion-item" data-ins="${esc(item.insert)}">${esc(item.label)}</button>`
+        ).join('');
+        panel.hidden = false;
+    }
+
     function openEditor(entry) {
         editingEntry = entry;
         $('editorTitle').textContent = `编辑 ${entry.id} (${entry.kind})`;
@@ -2435,11 +2641,47 @@
         $('editorError').textContent = '';
         $('editorOverlay').hidden = false;
         $('editorText').focus();
+        refreshCompletionPanel();
     }
 
     function closeEditor() {
         $('editorOverlay').hidden = true;
         editingEntry = null;
+    }
+
+    const TOP_LEVEL_KEYS = {
+        dragon_ability: ['activation', 'upgrade', 'usage_blocked', 'actions', 'can_be_manually_disabled', 'icon'],
+        dragon_species: ['starting_growth', 'unlockable_behavior', 'mana_handling', 'custom_stage_progression', 'bodies', 'abilities', 'penalties', 'misc_resources'],
+        dragon_stage: ['is_default', 'growth_range', 'ticks_until_grown', 'modifiers', 'growth_items', 'is_natural_growth_stopped', 'destruction_data'],
+        dragon_penalty: ['icon', 'condition', 'effect', 'trigger'],
+        projectile_data: ['general_data', 'type_data'],
+        dragon_body: ['is_default', 'unlockable_behavior', 'modifiers', 'can_hide_wings', 'model', 'texture_size', 'animation', 'default_icon', 'bones_to_hide_for_toggle', 'emotes', 'scaling_proportions', 'crouch_height_ratio', 'mounting_offset', 'backpack_offset', 'bettercombat_weapon_offset'],
+        dragon_emote_set: ['emotes']
+    };
+
+    function validateEditorJson(entry, text) {
+        let json;
+        try {
+            json = JSON.parse(text);
+        } catch {
+            return [];
+        }
+        if (!entry || !json || typeof json !== 'object' || Array.isArray(json)) return [];
+        const struct = mcdocStructForKind(entry.kind);
+        const allowed = struct
+            ? new Set([...(struct.required || []), ...(struct.optional || [])])
+            : new Set(TOP_LEVEL_KEYS[entry.kind] || []);
+        const warnings = Object.keys(json)
+            .filter(key => !allowed.has(key))
+            .map(key => `未知字段: ${key}`);
+        if (struct) {
+            for (const key of struct.required || []) {
+                if (!Object.prototype.hasOwnProperty.call(json, key)) {
+                    warnings.push(`缺少必需字段: ${key}`);
+                }
+            }
+        }
+        return warnings;
     }
 
     function saveEditor() {
@@ -2450,6 +2692,10 @@
         } catch (error) {
             $('editorError').textContent = `JSON 格式错误：${error.message}`;
             return;
+        }
+        const warnings = validateEditorJson(editingEntry, text);
+        if (warnings.length > 0) {
+            $('editorError').textContent = `⚠️ ${warnings.join('；')}（仍将保存）`;
         }
         send({ type: 'save', filePath: editingEntry.filePath, text });
         closeEditor();
@@ -2905,6 +3151,35 @@
         'dragonsurvival:hit_by_water_potion': {}
     };
 
+    const LOOT_CONDITION_AUTO_FIELDS = {
+        'minecraft:random_chance': { chance: 0.5 },
+        'minecraft:inverted': { term: {} },
+        'minecraft:any_of': { terms: [] },
+        'minecraft:all_of': { terms: [] },
+        'minecraft:reference': { name: '' },
+        'minecraft:entity_properties': { entity: 'this', predicate: {} },
+        'dragonsurvival:dragon_predicate': {
+            dragon_species: '',
+            stage_specific: {},
+            dragon_body: '',
+            ability_levels: [],
+            is_growth_stopped: false,
+            is_flying: false,
+            marked_by_ender_dragon: false,
+            flight_was_granted: false,
+            spin_was_granted: false
+        },
+        'dragonsurvival:custom_predicates': {
+            eye_in_fluid: '',
+            weather_predicate: {},
+            sun_light_level: {},
+            player_hunger: {},
+            health_percentage: {},
+            has_uuid: '',
+            looking_at_block: {}
+        }
+    };
+
     function autoCompleteMissingFields(path, value) {
         if (!currentDetail) return;
         const field = path[path.length - 1];
@@ -2936,6 +3211,18 @@
         if (field === 'upgrade_type') {
             const obj = getAtPath(currentDetail.data || {}, path.slice(0, -1));
             const template = UPGRADE_AUTO_FIELDS[value];
+            if (obj && template && typeof obj === 'object' && !Array.isArray(obj)) {
+                for (const [key, def] of Object.entries(template)) {
+                    if (!Object.prototype.hasOwnProperty.call(obj, key)) {
+                        obj[key] = JSON.parse(JSON.stringify(def));
+                    }
+                }
+            }
+        }
+
+        if (field === 'condition' && path.includes('usage_blocked')) {
+            const obj = getAtPath(currentDetail.data || {}, path.slice(0, -1));
+            const template = LOOT_CONDITION_AUTO_FIELDS[value];
             if (obj && template && typeof obj === 'object' && !Array.isArray(obj)) {
                 for (const [key, def] of Object.entries(template)) {
                     if (!Object.prototype.hasOwnProperty.call(obj, key)) {

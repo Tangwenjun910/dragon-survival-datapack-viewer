@@ -57,6 +57,10 @@ media/
 - 活动栏龙图标使用 [Font Awesome Free](https://fontawesome.com) 的 `dragon` 图标。
 - License: [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)（图标部分），其余代码为 MIT License。
 
+## JSON 编辑补全
+
+插件内置了常见龙之生存字段的 JSON 补全与悬浮说明，不依赖外部 Spyglass/MCDoc 文件，也不会向你的数据包目录复制任何补全文件。
+
 ## 已知限制
 
 - 保存时会重写为标准 JSON（移除注释和尾逗号）。

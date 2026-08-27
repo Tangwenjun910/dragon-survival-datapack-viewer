@@ -125,6 +125,7 @@ export class DragonDataProvider implements vscode.WebviewViewProvider {
 
     private _getHtml(webview: vscode.Webview): string {
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'style.css'));
+        const schemaUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'mcdocSchema.js'));
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'main.js'));
         const nonce = getNonce();
 
@@ -169,6 +170,7 @@ export class DragonDataProvider implements vscode.WebviewViewProvider {
                 <button id="editorClose" title="关闭">✕</button>
             </div>
             <textarea id="editorText" spellcheck="false"></textarea>
+            <div id="completionPanel" class="completion-panel" hidden></div>
             <div class="editor-actions">
                 <span id="editorError" class="editor-error"></span>
                 <button id="editorCancel">取消</button>
@@ -177,6 +179,7 @@ export class DragonDataProvider implements vscode.WebviewViewProvider {
         </div>
     </div>
 
+    <script nonce="${nonce}" src="${schemaUri}"></script>
     <script nonce="${nonce}" src="${scriptUri}"></script>
 </body>
 </html>`;

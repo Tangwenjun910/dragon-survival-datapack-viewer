@@ -38,9 +38,6 @@ body {
     padding: 12px 12px 8px 12px;
     border-bottom: 1px solid var(--border);
     background: var(--bg);
-    position: sticky;
-    top: 0;
-    z-index: 10;
 }
 
 .title-row {
@@ -903,6 +900,7 @@ pre.raw {
     border: 1px solid var(--border);
     border-radius: 6px;
     background: var(--vscode-sideBarSectionHeader-background, rgba(255,255,255,0.02));
+    scroll-margin-top: calc(var(--category-nav-height, 60px) + 8px);
 }
 
 .category-section > summary {
@@ -961,4 +959,56 @@ pre.raw {
     border: 1px solid var(--border);
     border-radius: 4px;
     image-rendering: pixelated;
+}
+
+.completion-panel {
+    max-height: 160px;
+    overflow-y: auto;
+    border-top: 1px solid var(--border);
+    padding: 6px 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+}
+
+.completion-title {
+    width: 100%;
+    font-size: 11px;
+    color: var(--vscode-descriptionForeground, #9d9d9d);
+}
+
+.completion-item {
+    background: var(--vscode-button-secondaryBackground, #3a3d41);
+    color: var(--vscode-button-secondaryForeground, #cccccc);
+    border: 1px solid transparent;
+    border-radius: 4px;
+    font-size: 11px;
+    font-family: var(--vscode-editor-font-family, Consolas, monospace);
+    padding: 3px 8px;
+    cursor: pointer;
+}
+
+.completion-item:hover {
+    border-color: var(--accent);
+}
+
+.invalid-field {
+    border: 1px solid var(--warn) !important;
+    border-radius: 4px;
+    background: rgba(215, 186, 122, 0.08);
+    padding: 2px 4px;
+}
+
+.missing-required {
+    border: 1px solid var(--error) !important;
+    background: rgba(244, 135, 113, 0.12);
+    color: var(--error);
+    border-radius: 4px;
+    padding: 6px 10px;
+    margin: 6px 0;
+    font-size: 12px;
+}
+
+[hidden] {
+    display: none !important;
 }

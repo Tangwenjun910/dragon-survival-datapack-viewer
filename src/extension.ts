@@ -7,6 +7,8 @@ import { findAssetDirectories, scanAssetsDirectory, scanDirectory } from './data
 import { loadModel } from './datapack/parser';
 import { parseJsonc } from './datapack/jsonc';
 import { discoverInWorkspace } from './workspaceScanner';
+import { registerDragonCompletionProvider } from './completionProvider';
+import { registerDragonDiagnostics } from './diagnostics';
 
 let provider: DragonDataProvider | undefined;
 let manualPath: string | undefined;
@@ -49,6 +51,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
             void vscode.commands.executeCommand('workbench.action.openSettings', 'dragonSurvivalDatapack');
         })
     );
+
+    context.subscriptions.push(registerDragonCompletionProvider());
+    context.subscriptions.push(registerDragonDiagnostics());
 
     context.subscriptions.push(
         vscode.workspace.onDidChangeWorkspaceFolders(() => {

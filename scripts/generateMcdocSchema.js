@@ -1,9 +1,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const MCDOC_ROOT = 'D:/wdsjlzscsj/DragonSurvival-Datapack-Viewer/mcdoc-src/mcdoc';
-const OUT = 'D:/wdsjlzscsj/DragonSurvival-Datapack-Viewer/src/mcdocSchema.ts';
-const OUT_JS = 'D:/wdsjlzscsj/DragonSurvival-Datapack-Viewer/media/mcdocSchema.js';
+const PROJECT_ROOT = path.resolve(__dirname, '..');
+const MCDOC_ROOT = path.join(PROJECT_ROOT, 'mcdoc-src', 'mcdoc');
+const OUT = path.join(PROJECT_ROOT, 'src', 'mcdocSchema.ts');
+const OUT_JS = path.join(PROJECT_ROOT, 'media', 'mcdocSchema.js');
 
 const KIND_TO_STRUCT = {
     dragon_ability: 'DragonAbility',

@@ -15,6 +15,60 @@
     box-sizing: border-box;
 }
 
+.form-object-missing {
+    border: 1px solid var(--error) !important;
+    border-radius: 6px;
+    background: rgba(244, 135, 113, 0.06);
+    padding: 6px;
+}
+
+.autofill-missing-btn {
+    margin-left: 8px;
+    padding: 2px 8px;
+    border: 1px solid var(--vscode-button-border, rgba(255, 255, 255, 0.2));
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #ffffff);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.autofill-missing-btn:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.custom-effect-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+}
+
+.custom-effect-form .form-input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.toolbar-btn {
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #ffffff);
+    border: 1px solid var(--vscode-button-border, rgba(255, 255, 255, 0.2));
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.toolbar-btn:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.editor-error {
+    color: var(--error);
+    font-size: 12px;
+    min-height: 16px;
+}
+
 [hidden] {
     display: none !important;
 }
@@ -1007,6 +1061,60 @@ pre.raw {
     padding: 6px 10px;
     margin: 6px 0;
     font-size: 12px;
+}
+
+.form-object-missing {
+    border: 1px solid var(--error) !important;
+    border-radius: 6px;
+    background: rgba(244, 135, 113, 0.06);
+    padding: 6px;
+}
+
+.autofill-missing-btn {
+    margin-left: 8px;
+    padding: 2px 8px;
+    border: 1px solid var(--vscode-button-border, rgba(255, 255, 255, 0.2));
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #ffffff);
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 11px;
+}
+
+.autofill-missing-btn:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.custom-effect-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+}
+
+.custom-effect-form .form-input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.toolbar-btn {
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #ffffff);
+    border: 1px solid var(--vscode-button-border, rgba(255, 255, 255, 0.2));
+    border-radius: 4px;
+    padding: 3px 8px;
+    cursor: pointer;
+    font-size: 12px;
+}
+
+.toolbar-btn:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
+.editor-error {
+    color: var(--error);
+    font-size: 12px;
+    min-height: 16px;
 }
 
 [hidden] {

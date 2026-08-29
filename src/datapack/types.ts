@@ -95,6 +95,12 @@ export interface AssetNamespace {
     }[];
 }
 
+export interface CustomEffectDefinition {
+    type: string;
+    fields?: string[];
+    required?: string[];
+}
+
 export interface ViewerSettings {
     openJsonOnDetail: boolean;
     showLocalizedNames: boolean;
@@ -102,6 +108,8 @@ export interface ViewerSettings {
     rememberScrollPosition: boolean;
     showResourcePreviews: boolean;
     showReferences: boolean;
+    customEffectTypes: string[];
+    customEffects: CustomEffectDefinition[];
 }
 
 export interface DSModel {

@@ -212,7 +212,17 @@ const ENUM_VALUE_LISTS: Record<string, string[]> = {
 };
 
 function enumItemsForKey(key: string): vscode.CompletionItem[] {
-    const values = ENUM_VALUE_LISTS[key] || [];
+    const values = [...(ENUM_VALUE_LISTS[key] || [])];
+    if (key === 'effect_type') {
+        const config = vscode.workspace.getConfiguration('dragonSurvivalDatapack');
+        const customs = new Set<string>(config.get<string[]>('customEffectTypes', []));
+        for (const def of config.get<Array<{ type: string }>>('customEffects', [])) {
+            if (def && typeof def.type === 'string') customs.add(def.type);
+        }
+        for (const custom of customs) {
+            if (!values.includes(custom)) values.push(custom);
+        }
+    }
     return values.map(v => value(v, v, '枚举值'));
 }
 

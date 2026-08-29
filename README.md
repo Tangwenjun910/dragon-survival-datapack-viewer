@@ -13,14 +13,14 @@
   - `dragon_penalty`（惩罚）
   - `projectile_data`（弹射物）
   - 以及 `tags/dragonsurvival/` 下的标签，用于解析龙种引用的能力/惩罚。
-- 📂 **手动选择目录**：也可以直接选择数据包目录或模组源码目录（例如 `star_dragon`）。
+- 📂 **手动选择目录**：也可以直接选择数据包目录或模组源码目录（例如 `example_mod`）。
 - 🗂️ **图形化概览**：命名空间页签、龙种卡片、阶段链流程图、能力/惩罚/弹射物卡片。
 - ✏️ **基础编辑**：在详情页点击“编辑 JSON”，修改后保存回文件（保存为标准 JSON 格式）。
 - ⚠️ **JSONC 兼容**：能读取带 `//` 注释和尾逗号的非标准 JSON。
 
 ## 使用方法
 
-1. 用 VS Code 打开包含数据包的文件夹（例如 `star_dragon` 或 `star_dragon_datapack`），
+1. 用 VS Code 打开包含数据包的文件夹（例如 `example_mod` 或 `example_mod_datapack`），
    或点击侧边栏的 **选择目录** 手动指定。
 2. 侧边栏会自动显示识别到的命名空间。
 3. 点击卡片查看详情；点击“编辑 JSON”可修改并保存。
@@ -66,3 +66,11 @@ media/
 - 保存时会重写为标准 JSON（移除注释和尾逗号）。
 - 目前是“基础编辑”，适合修改数值、ID、颜色等；复杂嵌套建议配合原始 JSON 视图。
 - 如果数据包使用了跨命名空间标签，解析时会尽量在所有已发现命名空间中查找。
+
+## 鸣谢：
+核心数据补全来源LinFeng的https://github.com/Dragon-LinFeng/dragonsurvival-mcdoc-completion-zh
+
+## 声明：
+本项目是基于 龙之生存 的第三方开发工具。
+- 龙之生存 Mod 本体：版权归原开发者所有
+- 核心补全数据来源为ttps://github.com/Dragon-LinFeng/dragonsurvival-mcdoc-completion-zh，本项目只是将其插件化和图形化

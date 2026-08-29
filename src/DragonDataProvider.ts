@@ -2,6 +2,12 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { DSModel } from './datapack/types';
 
+export interface CustomEffectPayload {
+    effectType: string;
+    fields: string[];
+    required?: string[];
+}
+
 export interface DragonDataMessageHandlers {
     onSave(filePath: string, text: string): Promise<void>;
     onSelect(): Promise<void>;
@@ -9,6 +15,7 @@ export interface DragonDataMessageHandlers {
     onOpenFile(filePath: string): Promise<void>;
     onAddFile(kind: string, namespace: string): Promise<void>;
     onDeleteFile(filePath: string): Promise<void>;
+    onAddCustomEffect(effect: CustomEffectPayload): Promise<void>;
 }
 
 export class DragonDataProvider implements vscode.WebviewViewProvider {
@@ -68,6 +75,15 @@ export class DragonDataProvider implements vscode.WebviewViewProvider {
                 const text = String(message.text ?? '');
                 if (filePath && text) {
                     await this._handlers.onSave(filePath, text);
+                }
+                break;
+            }
+            case 'addCustomEffect': {
+                const effectType = String(message.effectType ?? '');
+                const fields = Array.isArray(message.fields) ? (message.fields as unknown[]).map(String) : [];
+                const required = Array.isArray(message.required) ? (message.required as unknown[]).map(String) : [];
+                if (effectType) {
+                    await this._handlers.onAddCustomEffect({ effectType, fields, required });
                 }
                 break;
             }

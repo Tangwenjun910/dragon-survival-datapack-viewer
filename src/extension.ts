@@ -21,7 +21,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         onRefresh: () => refresh(),
         onOpenFile: (filePath) => openFile(filePath),
         onAddFile: (kind, namespace) => addFile(kind as RegistryKind, namespace),
-        onDeleteFile: (filePath) => deleteFile(filePath)
+        onDeleteFile: (filePath) => deleteFile(filePath),
+        onAddCustomEffect: (effect) => addCustomEffect(effect)
     });
 
     context.subscriptions.push(
@@ -62,6 +63,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     );
 
     context.subscriptions.push(
+        vscode.workspace.onDidSaveTextDocument((document) => {
+            if (isDragonSurvivalDataFile(document.uri.fsPath)) {
+                void refresh();
+            }
+        })
+    );
+
+    context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((event) => {
             if (event.affectsConfiguration('dragonSurvivalDatapack')) {
                 void refresh();
@@ -85,8 +94,15 @@ function getSettings(): ViewerSettings {
         showRawFieldKeys: config.get<boolean>('showRawFieldKeys', true),
         rememberScrollPosition: config.get<boolean>('rememberScrollPosition', true),
         showResourcePreviews: config.get<boolean>('showResourcePreviews', true),
-        showReferences: config.get<boolean>('showReferences', true)
+        showReferences: config.get<boolean>('showReferences', true),
+        customEffectTypes: config.get<string[]>('customEffectTypes', []),
+        customEffects: config.get<Array<{ type: string; fields?: string[]; required?: string[] }>>('customEffects', [])
     };
+}
+
+function isDragonSurvivalDataFile(filePath: string): boolean {
+    const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+    return normalized.includes('/dragonsurvival/') && normalized.endsWith('.json');
 }
 
 async function refresh(): Promise<void> {
@@ -244,6 +260,20 @@ async function selectDatapack(context: vscode.ExtensionContext): Promise<void> {
 
     manualPath = picked[0].fsPath;
     await context.globalState.update('dragonSurvivalDatapack.manualPath', manualPath);
+    await refresh();
+}
+
+async function addCustomEffect(effect: { effectType: string; fields: string[]; required?: string[] }): Promise<void> {
+    const config = vscode.workspace.getConfiguration('dragonSurvivalDatapack');
+    const current = config.get<Array<{ type: string; fields?: string[]; required?: string[] }>>('customEffects', []);
+    const next = current.filter(def => def.type !== effect.effectType);
+    next.push({
+        type: effect.effectType,
+        fields: effect.fields || [],
+        required: effect.required || []
+    });
+    await config.update('customEffects', next, vscode.ConfigurationTarget.Global);
+    vscode.window.showInformationMessage(`已添加自定义效果: ${effect.effectType}`);
     await refresh();
 }
 

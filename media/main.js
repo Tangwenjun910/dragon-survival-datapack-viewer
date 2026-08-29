@@ -2,12 +2,16 @@
 (function () {
     const vscode = acquireVsCodeApi();
 
-    /** @type {{ model: any }} */
+    const persistedState = vscode.getState() || {};
+
+    /** @type {{ model: any, detailRef: any, namespaceRef: string|null }} */
     const state = {
-        model: null
+        model: null,
+        detailRef: persistedState.detailRef || null,
+        namespaceRef: persistedState.namespaceRef || null
     };
 
-    let currentNamespace = null;
+    let currentNamespace = state.namespaceRef || null;
     let currentDetail = null;
     let editingEntry = null;
     let currentLang = 'zh';
@@ -19,7 +23,7 @@
         showResourcePreviews: true,
         showReferences: true
     };
-    let savedScrollTop = 0;
+    let savedScrollTop = persistedState.savedScrollTop || 0;
     let resourceFileMap = {};
     const assetPreviewCache = {};
     const mcdocSchema = window.MCDOC_SCHEMA || null;
@@ -31,44 +35,93 @@
         return mcdocSchema.structs && mcdocSchema.structs[structName] || null;
     }
 
-    function resolveMcdocStruct(path, obj) {
-        if (!mcdocSchema || !obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+    function mergeMcdocStructs(...structs) {
+        const required = new Set();
+        const optional = new Set();
+        for (const s of structs) {
+            if (!s) continue;
+            for (const k of (s.required || [])) required.add(k);
+            for (const k of (s.optional || [])) optional.add(k);
+        }
+        return {
+            required: [...required],
+            optional: [...optional].filter(k => !required.has(k))
+        };
+    }
+
+    function resolveDispatchStruct(baseName, registry, value) {
         const dispatch = mcdocSchema.dispatch || {};
         const structs = mcdocSchema.structs || {};
+        const name = value ? dispatch[registry]?.[value] : undefined;
+        if (name) {
+            let merged = mergeMcdocStructs(structs[baseName], structs[name]);
+            if (registry.includes('effect')) merged = augmentCustomEffectStruct(value, merged);
+            return merged;
+        }
+        // Discriminator missing/unknown: allow all variant fields, but only
+        // report the base required fields as missing (e.g. target_type).
+        const allVariants = Object.values(dispatch[registry] || {})
+            .map(n => structs[n])
+            .filter(Boolean);
+        const baseStruct = structs[baseName] || { required: [], optional: [] };
+        const allFields = new Set([...(baseStruct.required || []), ...(baseStruct.optional || [])]);
+        for (const v of allVariants) {
+            for (const f of (v.required || [])) allFields.add(f);
+            for (const f of (v.optional || [])) allFields.add(f);
+        }
+        const required = [...(baseStruct.required || [])];
+        const optional = [...allFields].filter(f => !required.includes(f));
+        let result = { required, optional };
+        if (registry.includes('effect')) result = augmentCustomEffectStruct(value, result);
+        return result;
+    }
+
+    function isDispatchContainerPath(path, key) {
+        if (path.length === 0) return false;
+        const last = path[path.length - 1];
+        if (last === key) return true;
+        return typeof last === 'number' && path[path.length - 2] === key;
+    }
+
+    function resolveMcdocStruct(path, obj) {
+        if (!mcdocSchema || !obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
         const effectType = typeof obj.effect_type === 'string' ? obj.effect_type : null;
         const activationType = typeof obj.activation_type === 'string' ? obj.activation_type : null;
         const upgradeType = typeof obj.upgrade_type === 'string' ? obj.upgrade_type : null;
         const targetType = typeof obj.target_type === 'string' ? obj.target_type : null;
         const penaltyType = typeof obj.penalty_type === 'string' ? obj.penalty_type : null;
         const penaltyTrigger = typeof obj.penalty_trigger === 'string' ? obj.penalty_trigger : null;
+        const triggerType = typeof obj.trigger_type === 'string' ? obj.trigger_type : null;
 
-        if (effectType && path.includes('entity_effect')) {
-            const name = dispatch['dragonsurvival:ability_entity_effect']?.[effectType];
-            return name ? structs[name] : null;
+        if (isDispatchContainerPath(path, 'entity_effect')) {
+            return resolveDispatchStruct('EntityEffect__data_dragonsurvival_dragon_ability', 'dragonsurvival:ability_entity_effect', effectType);
         }
-        if (effectType && path.includes('block_effect')) {
-            const name = dispatch['dragonsurvival:ability_block_effect']?.[effectType];
-            return name ? structs[name] : null;
+        if (isDispatchContainerPath(path, 'block_effect')) {
+            return resolveDispatchStruct('BlockEffect__data_dragonsurvival_dragon_ability', 'dragonsurvival:ability_block_effect', effectType);
         }
-        if (activationType && path.includes('activation')) {
-            const name = dispatch['dragonsurvival:activation']?.[activationType];
-            return name ? structs[name] : null;
+        if (isDispatchContainerPath(path, 'activation')) {
+            return resolveDispatchStruct('Activation__data_dragonsurvival_dragon_ability', 'dragonsurvival:activation', activationType);
         }
-        if (upgradeType && path.includes('upgrade')) {
-            const name = dispatch['dragonsurvival:upgrade_type']?.[upgradeType];
-            return name ? structs[name] : null;
+        if (isDispatchContainerPath(path, 'upgrade')) {
+            return resolveDispatchStruct('Upgrade__data_dragonsurvival_dragon_ability', 'dragonsurvival:upgrade_type', upgradeType);
         }
-        if (targetType && path.includes('target_selection')) {
-            const name = dispatch['dragonsurvival:ability_targeting']?.[targetType];
-            return name ? structs[name] : null;
+        if (isDispatchContainerPath(path, 'target_selection')) {
+            return resolveDispatchStruct('Targeting__data_dragonsurvival_dragon_ability', 'dragonsurvival:ability_targeting', targetType);
         }
-        if (penaltyType && path.includes('effect')) {
-            const name = dispatch['dragonsurvival:penalty_effect']?.[penaltyType];
-            return name ? structs[name] : null;
+        if (isDispatchContainerPath(path, 'effect')) {
+            return resolveDispatchStruct('PenaltyEffect__data_dragonsurvival_dragon_penalty', 'dragonsurvival:penalty_effect', penaltyType);
         }
-        if (penaltyTrigger && path.includes('trigger')) {
-            const name = dispatch['dragonsurvival:penalty_trigger']?.[penaltyTrigger];
-            return name ? structs[name] : null;
+        if (isDispatchContainerPath(path, 'trigger')) {
+            if ('penalty_trigger' in obj || typeof obj.penalty_trigger === 'string') {
+                return resolveDispatchStruct('PenaltyTrigger__data_dragonsurvival_dragon_penalty', 'dragonsurvival:penalty_trigger', penaltyTrigger);
+            }
+            if ('trigger_type' in obj || typeof obj.trigger_type === 'string') {
+                return resolveDispatchStruct('ActivationTrigger__data_dragonsurvival_dragon_ability', 'dragonsurvival:activation_trigger', triggerType);
+            }
+            if (path.includes('activation')) {
+                return resolveDispatchStruct('ActivationTrigger__data_dragonsurvival_dragon_ability', 'dragonsurvival:activation_trigger', triggerType);
+            }
+            return resolveDispatchStruct('PenaltyTrigger__data_dragonsurvival_dragon_penalty', 'dragonsurvival:penalty_trigger', penaltyTrigger);
         }
         return null;
     }
@@ -471,6 +524,26 @@
             const target = event.target;
             if (!(target instanceof Element)) return;
 
+            const autofillBtn = target.closest('.autofill-missing-btn');
+            if (autofillBtn) {
+                const path = JSON.parse(decodeURIComponent(autofillBtn.getAttribute('data-autofill-path') || '[]'));
+                const obj = getAtPath((currentDetail && currentDetail.data) || {}, path);
+                let struct = resolveMcdocStruct(path, obj);
+                if (!struct && path.length === 0 && currentDetail) {
+                    struct = mcdocStructForKind(currentDetail.kind);
+                }
+                if (obj && struct && typeof obj === 'object' && !Array.isArray(obj)) {
+                    for (const key of (struct.required || [])) {
+                        if (!Object.prototype.hasOwnProperty.call(obj, key)) {
+                            obj[key] = getFieldDefault(key, path);
+                        }
+                    }
+                    renderDetail(currentDetail);
+                    saveCurrentDetail();
+                }
+                return;
+            }
+
             const addMapBtn = target.closest('.add-map-entry');
             if (addMapBtn) {
                 const path = JSON.parse(decodeURIComponent(addMapBtn.getAttribute('data-map-path') || '[]'));
@@ -582,6 +655,7 @@
         }
         if (state.model.settings) {
             settings = Object.assign({}, settings, state.model.settings);
+            applyCustomEffectTypes();
         }
         resourceFileMap = {};
         for (const nsAsset of state.model.assets || []) {
@@ -594,6 +668,9 @@
         if (!currentNamespace || !state.model.namespaces.some(ns => ns.namespace === currentNamespace)) {
             currentNamespace = state.model.namespaces.length > 0 ? state.model.namespaces[0].namespace : null;
         }
+        if (!currentDetail && state.detailRef) {
+            currentDetail = findEntry(state.detailRef.kind, state.detailRef.namespace + ':' + state.detailRef.id) || null;
+        }
         if (currentDetail) {
             const fresh = findEntry(currentDetail.kind, currentDetail.namespace + ':' + currentDetail.id);
             currentDetail = fresh || null;
@@ -603,6 +680,16 @@
 
     function send(message) {
         vscode.postMessage(message);
+    }
+
+    function persistState() {
+        vscode.setState({
+            namespaceRef: currentNamespace,
+            detailRef: currentDetail
+                ? { kind: currentDetail.kind, namespace: currentDetail.namespace, id: currentDetail.id }
+                : null,
+            savedScrollTop: savedScrollTop
+        });
     }
 
     // ---------- Rendering ----------
@@ -681,6 +768,7 @@
             button.addEventListener('click', () => {
                 currentNamespace = ns.namespace;
                 currentDetail = null;
+                persistState();
                 renderAll();
             });
             container.appendChild(button);
@@ -1058,14 +1146,16 @@
     function renderMissingRequiredWarning(entry) {
         const missing = getMissingRequiredFields(entry);
         if (missing.length === 0) return '';
-        return `<div class="missing-required">🔴 ${tr('缺少必需字段', 'Missing required fields')}: ${missing.map(k => `<code>${esc(k)}</code>`).join('、')}</div>`;
+        const btn = `<button class="autofill-missing-btn" data-autofill-path="${encodeURIComponent(JSON.stringify([]))}">一键补全</button>`;
+        return `<div class="missing-required">🔴 ${tr('缺少必需字段', 'Missing required fields')}: ${missing.map(k => `<code>${esc(k)}</code>`).join('、')} ${btn}</div>`;
     }
 
-    function renderStructMissingWarning(struct, obj) {
+    function renderStructMissingWarning(struct, obj, path) {
         if (!struct || !obj) return '';
         const missing = (struct.required || []).filter(key => !Object.prototype.hasOwnProperty.call(obj, key));
         if (missing.length === 0) return '';
-        return `<div class="missing-required">🔴 ${tr('缺少必需字段', 'Missing required fields')}: ${missing.map(k => `<code>${esc(k)}</code>`).join('、')}</div>`;
+        const btn = `<button class="autofill-missing-btn" data-autofill-path="${encodeURIComponent(JSON.stringify(path || []))}">一键补全</button>`;
+        return `<div class="missing-required">🔴 ${tr('缺少必需字段', 'Missing required fields')}: ${missing.map(k => `<code>${esc(k)}</code>`).join('、')} ${btn}</div>`;
     }
 
     function renderDetail(entry) {
@@ -1106,6 +1196,7 @@
 
         $('backBtn').addEventListener('click', () => {
             currentDetail = null;
+            persistState();
             renderAll();
             if (settings.rememberScrollPosition) {
                 window.scrollTo(0, savedScrollTop);
@@ -1219,7 +1310,12 @@
         const growthItems = d.growth_items || [];
         const destruction = d.destruction_data || {};
 
-
+        const infoItems = [
+            ['成长范围', range.min != null && range.max != null ? `${range.min} - ${range.max}` : ''],
+            ['成熟所需刻数', d.ticks_until_grown != null ? formatTicks(d.ticks_until_grown) : ''],
+            ['默认阶段', d.is_default ? '是' : ''],
+            ['自然生长停止', d.is_natural_growth_stopped ? '是' : '']
+        ].filter(item => item[1] !== '' && item[1] !== undefined).map(([k, v]) => `<div class="info-item"><div class="info-label">${esc(k)}</div><div class="info-value">${esc(v)}</div></div>`).join('');
 
         const modifierRows = modifiers.map(m => {
             const amount = typeof m.amount === 'object' ? JSON.stringify(m.amount) : fmt(m.amount);
@@ -1583,12 +1679,16 @@
                 ? Object.keys(value).filter(field => !schema.required.includes(field))
                 : [];
             const mdocStruct = resolveMcdocStruct(path, value);
-            const structWarning = renderStructMissingWarning(mdocStruct, value);
+            const structWarning = renderStructMissingWarning(mdocStruct, value, path);
+            const missingRequired = mdocStruct
+                ? (mdocStruct.required || []).filter(k => !Object.prototype.hasOwnProperty.call(value, k))
+                : [];
+            const objectClass = missingRequired.length > 0 ? ' form-object-missing' : '';
 
             if (entries.length === 0) {
                 const lastKey = path[path.length - 1];
                 if (lastKey === 'applied_effects' || (schemaAddable && Object.keys(schemaAddable).length > 0)) {
-                    return `<div class="form-object">${structWarning}${renderFieldPalette(path, value, false, false, schemaAddable)}</div>`;
+                    return `<div class="form-object${objectClass}">${structWarning}${renderFieldPalette(path, value, false, false, schemaAddable)}</div>`;
                 }
                 return structWarning || '<span class="form-empty">空对象</span>';
             }
@@ -1597,7 +1697,7 @@
             const isDietEntryRoot = Object.prototype.hasOwnProperty.call(value, 'items') && Object.prototype.hasOwnProperty.call(value, 'properties');
             const canDeleteField = isProperties || isDietEntryRoot || deletableFields.length > 0;
 
-            return `<div class="form-object">${entries.map(([key, val]) => {
+            return `<div class="form-object${objectClass}">${entries.map(([key, val]) => {
                 const label = humanizeKey(key);
                 const childPath = [...path, key];
                 const pathStr = encodeURIComponent(JSON.stringify(path));
@@ -1638,14 +1738,12 @@
 
                 if (enumOptions) {
                     const currentValue = String(val);
+                    const listId = 'enum-' + fieldPath.replace(/[^a-zA-Z0-9_-]/g, '_');
                     const optionsHtml = enumOptions.map(option =>
-                        `<option value="${esc(option.value)}" ${option.value === currentValue ? 'selected' : ''}>${esc(getEnumLabel(option))}</option>`
+                        `<option value="${esc(option.value)}">${esc(getEnumLabel(option))}</option>`
                     ).join('');
-                    const currentOption = enumOptions.find(option => option.value === currentValue);
-                    fieldControl = `<select class="form-select st-edit-field st-enum-field" data-edit-path="${fieldPath}">
-                        ${currentOption ? '' : `<option value="${esc(currentValue)}" selected>${esc(currentValue)}</option>`}
-                        ${optionsHtml}
-                    </select>`;
+                    fieldControl = `<input class="form-input st-edit-field st-enum-field" list="${listId}" data-edit-path="${fieldPath}" value="${esc(currentValue)}" placeholder="选择或输入自定义值">
+                        <datalist id="${listId}">${optionsHtml}</datalist>`;
                 } else if (typeof val === 'boolean') {
                     fieldControl = `<select class="form-select st-edit-field" data-edit-path="${fieldPath}">
                         <option value="true" ${val ? 'selected' : ''}>是</option>
@@ -2396,6 +2494,44 @@
         return `<span class="form-label">${esc(humanizeKey(key))}</span>`;
     }
 
+    function applyCustomEffectTypes() {
+        const customs = new Set((settings.customEffectTypes || []).filter(Boolean));
+        for (const def of (settings.customEffects || [])) {
+            if (def && typeof def.type === 'string') customs.add(def.type);
+        }
+        if (customs.size === 0) return;
+        for (const key of ['effect_type', 'block_effect_type']) {
+            const existing = ENUM_OPTIONS[key] || [];
+            const values = new Set(existing.map(o => o.value));
+            for (const value of customs) {
+                if (!values.has(value)) {
+                    existing.push({ value, label: value });
+                    values.add(value);
+                }
+            }
+            ENUM_OPTIONS[key] = existing;
+        }
+    }
+
+    function augmentCustomEffectStruct(value, struct) {
+        if (!value || !struct) return struct;
+        const def = (settings.customEffects || []).find(d => d && d.type === value);
+        if (!def) return struct;
+        const required = [...(struct.required || [])];
+        const optional = [...(struct.optional || [])];
+        for (const f of (def.fields || [])) {
+            if (!required.includes(f) && !optional.includes(f)) optional.push(f);
+        }
+        for (const f of (def.required || [])) {
+            if (!required.includes(f)) {
+                required.push(f);
+                const idx = optional.indexOf(f);
+                if (idx >= 0) optional.splice(idx, 1);
+            }
+        }
+        return { required, optional };
+    }
+
     function isInvalidEnumValue(path, key, value) {
         if (typeof value !== 'string') return false;
         const fieldKey = key === 'effect_type' && path.includes('block_effect') ? 'block_effect_type' : key;
@@ -3138,7 +3274,7 @@
 
     const PENALTY_TRIGGER_AUTO_FIELDS = {
         'dragonsurvival:supply': {
-            supply_type: 'star_dragon:star_points',
+            supply_type: 'example:star_points',
             trigger_rate: 20,
             reduction_rate: 0,
             regeneration_rate: 0,
@@ -3441,12 +3577,84 @@
                 savedScrollTop = window.scrollY;
             }
             currentDetail = entry;
+            persistState();
             renderAll();
             if (settings.openJsonOnDetail) {
                 send({ type: 'openFile', filePath: entry.filePath });
             }
         }
     }
+
+    function initCustomEffectUI() {
+        const settingsBtn = $('settingsBtn');
+        if (settingsBtn && !$('customEffectBtn')) {
+            settingsBtn.insertAdjacentHTML('afterend', '<button id="customEffectBtn" class="toolbar-btn" title="添加自定义效果">➕ 自定义效果</button>');
+        }
+
+        if (!$('customEffectOverlay')) {
+            const overlay = document.createElement('div');
+            overlay.id = 'customEffectOverlay';
+            overlay.className = 'editor-overlay';
+            overlay.hidden = true;
+            overlay.innerHTML = `
+                <div class="editor-box">
+                    <div class="editor-header">
+                        <span>自定义效果</span>
+                        <button id="closeCustomEffectBtn" class="icon-btn">✕</button>
+                    </div>
+                    <div class="custom-effect-form">
+                        <label class="form-label">效果类型</label>
+                        <input id="customEffectType" class="form-input" placeholder="例如 example:time">
+                        <label class="form-label">允许字段（逗号分隔）</label>
+                        <textarea id="customEffectFields" class="form-input" rows="3" placeholder="field_a, field_b, field_c"></textarea>
+                        <label class="form-label">必填字段（逗号分隔，可留空）</label>
+                        <textarea id="customEffectRequired" class="form-input" rows="2" placeholder=""></textarea>
+                        <div id="customEffectError" class="editor-error"></div>
+                        <button id="saveCustomEffectBtn" class="back-button primary">保存自定义效果</button>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+        }
+
+        const openBtn = $('customEffectBtn');
+        if (openBtn) {
+            openBtn.addEventListener('click', () => {
+                const error = $('customEffectError');
+                if (error) error.textContent = '';
+                $('customEffectOverlay').hidden = false;
+                const typeInput = $('customEffectType');
+                if (typeInput) typeInput.focus();
+            });
+        }
+
+        const closeBtn = $('closeCustomEffectBtn');
+        if (closeBtn) {
+            closeBtn.addEventListener('click', () => {
+                $('customEffectOverlay').hidden = true;
+            });
+        }
+
+        const saveBtn = $('saveCustomEffectBtn');
+        if (saveBtn) {
+            saveBtn.addEventListener('click', () => {
+                const typeInput = $('customEffectType');
+                const fieldsInput = $('customEffectFields');
+                const requiredInput = $('customEffectRequired');
+                const error = $('customEffectError');
+                const effectType = typeInput ? typeInput.value.trim() : '';
+                if (!effectType) {
+                    if (error) error.textContent = '请填写效果类型';
+                    return;
+                }
+                const fields = fieldsInput ? fieldsInput.value.split(',').map(s => s.trim()).filter(Boolean) : [];
+                const required = requiredInput ? requiredInput.value.split(',').map(s => s.trim()).filter(Boolean) : [];
+                send({ type: 'addCustomEffect', effectType, fields, required });
+            });
+        }
+    }
+
+    initCustomEffectUI();
 
     // Kept for potential external callers / debugging.
     window.__showDetail = showDetailByFullId;

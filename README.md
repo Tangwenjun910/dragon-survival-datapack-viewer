@@ -73,4 +73,4 @@ media/
 ## 声明：
 本项目是基于 龙之生存 的第三方开发工具。
 - 龙之生存 Mod 本体：版权归原开发者所有
-- 核心补全数据来源为https://github.com/Dragon-LinFeng/dragonsurvival-mcdoc-completion-zh，本项目只是将其插件化和图形化
+- 核心补全数据来源为https://github.com/Dragon-LinFeng/dragonsurvival-mcdoc-completion-zh ，本项目只是将其插件化和图形化

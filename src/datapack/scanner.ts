@@ -162,23 +162,37 @@ async function collectRegistryFiles(
         }
 
         const registryPath = path.join(dsDir, registryDir.name);
-        let files: fs.Dirent[];
-        try {
-            files = await fsp.readdir(registryPath, { withFileTypes: true });
-        } catch {
-            continue;
-        }
+        await collectJsonFilesRecursive(registryPath, registryPath, registryDir.name, namespace, isTag, output);
+    }
+}
 
-        for (const file of files) {
-            if (!file.isFile() || !file.name.endsWith('.json')) {
-                continue;
-            }
+async function collectJsonFilesRecursive(
+    dir: string,
+    registryPath: string,
+    kind: RegistryKind,
+    namespace: string,
+    isTag: boolean,
+    output: DiscoveredFile[]
+): Promise<void> {
+    let entries: fs.Dirent[];
+    try {
+        entries = await fsp.readdir(dir, { withFileTypes: true });
+    } catch {
+        return;
+    }
 
+    for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+            await collectJsonFilesRecursive(full, registryPath, kind, namespace, isTag, output);
+        } else if (entry.isFile() && entry.name.endsWith('.json')) {
+            const relative = path.relative(registryPath, full).replace(/\\/g, '/');
+            const id = relative.slice(0, -5); // strip .json
             output.push({
-                kind: registryDir.name,
+                kind,
                 namespace,
-                id: path.basename(file.name, '.json'),
-                filePath: path.join(registryPath, file.name),
+                id,
+                filePath: full,
                 isTag
             });
         }
@@ -380,14 +394,16 @@ export function classifyFilePath(filePath: string): DiscoveredFile | undefined {
     const registry = normalized[dataIndex + 3];
 
     if (section === 'dragonsurvival' && isRegistryKind(registry)) {
-        const id = path.basename(filePath, '.json');
+        const relative = normalized.slice(dataIndex + 4).join('/');
+        const id = relative.endsWith('.json') ? relative.slice(0, -5) : relative;
         return { kind: registry, namespace, id, filePath, isTag: false };
     }
 
     if (section === 'tags' && registry === 'dragonsurvival' && normalized.length > dataIndex + 5) {
         const registryName = normalized[dataIndex + 4];
         if (isRegistryKind(registryName)) {
-            const id = path.basename(filePath, '.json');
+            const relative = normalized.slice(dataIndex + 5).join('/');
+            const id = relative.endsWith('.json') ? relative.slice(0, -5) : relative;
             return { kind: registryName, namespace, id, filePath, isTag: true };
         }
     }

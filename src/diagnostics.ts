@@ -93,7 +93,6 @@ const COMBINED_TARGETING = `${BLOCK_TARGETING}+${ENTITY_TARGETING}`;
 function isPermissiveStruct(name?: string): boolean {
     if (!name) return false;
     if (name.startsWith('LevelBasedValueMap__')) return true;
-    if (name === COMBINED_TARGETING) return true;
     return name === 'ProjectileWorldEffect__data_dragonsurvival_projectile_data'
         || name === 'ProjectileBlockEffect__data_dragonsurvival_projectile_data'
         || name === 'ProjectileEntityEffect__data_dragonsurvival_projectile_data';

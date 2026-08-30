@@ -123,6 +123,16 @@
             }
             return resolveDispatchStruct('PenaltyTrigger__data_dragonsurvival_dragon_penalty', 'dragonsurvival:penalty_trigger', penaltyTrigger);
         }
+        if (isDispatchContainerPath(path, 'applied_effects')) {
+            const structs = mcdocSchema.structs || {};
+            const blockTargeting = structs['BlockTargeting__data_dragonsurvival_dragon_ability'];
+            const entityTargeting = structs['EntityTargeting__data_dragonsurvival_dragon_ability'];
+            if ('entity_effect' in obj && 'block_effect' in obj) {
+                return mergeMcdocStructs(blockTargeting, entityTargeting);
+            }
+            if ('entity_effect' in obj) return entityTargeting || null;
+            if ('block_effect' in obj) return blockTargeting || null;
+        }
         return null;
     }
 
@@ -1937,10 +1947,10 @@
             const conditionFields = (typeof LOOT_CONDITION_AUTO_FIELDS !== 'undefined' && LOOT_CONDITION_AUTO_FIELDS[conditionType]) || {};
             add(Object.assign({ condition: 'minecraft:random_chance' }, conditionFields), ['condition']);
         } else if (key === 'actions.*') {
-            add({ target_selection: { target_type: 'dragonsurvival:self', applied_effects: { entity_effect: [], block_effect: [] } }, trigger_rate: 1, trigger_point: 'default' }, ['target_selection']);
+            add({ target_selection: { target_type: 'dragonsurvival:self', applied_effects: { entity_effect: [], targeting_mode: 'all' } }, trigger_rate: 1, trigger_point: 'default' }, ['target_selection']);
         } else if (key === 'actions.*.target_selection') {
             const type = obj && obj.target_type;
-            const common = { target_type: 'dragonsurvival:self', applied_effects: { entity_effect: [], block_effect: [] } };
+            const common = { target_type: 'dragonsurvival:self', applied_effects: { entity_effect: [], targeting_mode: 'all' } };
             if (type === 'dragonsurvival:area') {
                 add(Object.assign(common, { radius: 1 }), ['target_type', 'applied_effects']);
             } else if (type === 'dragonsurvival:dragon_breath') {
@@ -1955,7 +1965,7 @@
                 add(Object.assign(common, { target_conditions: {}, targeting_mode: 'all' }), ['target_type', 'applied_effects']);
             }
         } else if (key === 'actions.*.target_selection.applied_effects') {
-            add({ entity_effect: [], block_effect: [], target_conditions: {}, targeting_mode: 'all' }, ['entity_effect', 'block_effect']);
+            add({ entity_effect: [], block_effect: [], target_conditions: {}, targeting_mode: 'all' });
         } else if (key === 'actions.*.target_selection.applied_effects.entity_effect.*') {
             const type = obj && obj.effect_type;
             add(Object.assign({ effect_type: 'dragonsurvival:damage' }, ENTITY_EFFECT_OPTIONAL_FIELDS[type] || {}), ['effect_type']);
@@ -1993,7 +2003,7 @@
                     is_hidden: false
                 }, ['id']);
             } else if (lastKey === 'target_selection' && obj && obj.target_type) {
-                add({ applied_effects: { entity_effect: [], block_effect: [] } }, ['applied_effects']);
+                add({ applied_effects: { entity_effect: [], targeting_mode: 'all' } }, ['applied_effects']);
             }
         }
 
@@ -3027,7 +3037,7 @@
             return {
                 target_selection: {
                     target_type: 'dragonsurvival:self',
-                    applied_effects: { entity_effect: [], block_effect: [] }
+                    applied_effects: { entity_effect: [], targeting_mode: 'all' }
                 },
                 trigger_point: 'default',
                 trigger_rate: 0

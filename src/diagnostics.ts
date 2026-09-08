@@ -1,5 +1,8 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
 import { MCDOC_STRUCTS, KIND_TO_STRUCT, MCDOC_DISPATCH, MCDOC_STRUCT_CHILDREN } from './mcdocSchema';
+import { getCustomFieldContext, getCustomValuesForContext } from './customFields';
 
 const KIND_PATTERNS: Record<string, RegExp> = {
     dragon_ability: /\/data\/[^/]+\/dragonsurvival\/dragon_ability\//i,
@@ -27,6 +30,10 @@ const ENUM_VALUES: Record<string, string[]> = {
     activation_type: ['dragonsurvival:passive', 'dragonsurvival:simple', 'dragonsurvival:channeled'],
     upgrade_type: ['dragonsurvival:experience_points', 'dragonsurvival:experience_levels', 'dragonsurvival:dragon_growth', 'dragonsurvival:item_based', 'dragonsurvival:condition_based'],
     target_type: ['dragonsurvival:area', 'dragonsurvival:dragon_breath', 'dragonsurvival:looking_at', 'dragonsurvival:self', 'dragonsurvival:disc'],
+    projectile_target_type: ['dragonsurvival:area', 'dragonsurvival:point'],
+    projectile_entity_effect_type: ['dragonsurvival:damage', 'dragonsurvival:potion', 'dragonsurvival:lightning', 'dragonsurvival:particle', 'dragonsurvival:run_function', 'dragonsurvival:push'],
+    projectile_block_effect_type: ['dragonsurvival:particle', 'dragonsurvival:run_function', 'dragonsurvival:area_cloud'],
+    projectile_world_effect_type: ['dragonsurvival:explosion', 'dragonsurvival:lightning', 'dragonsurvival:particle', 'dragonsurvival:run_function'],
     effect_type: [
         'dragonsurvival:damage', 'dragonsurvival:modifier', 'dragonsurvival:potion', 'dragonsurvival:projectile',
         'dragonsurvival:summon_entity', 'dragonsurvival:damage_modification', 'dragonsurvival:breath_particles',
@@ -55,6 +62,33 @@ interface CustomEffectDefinition {
     type: string;
     fields?: string[];
     required?: string[];
+    fieldInfo?: Record<string, string>;
+}
+
+function getProjectCustomEffectDefinitions(): Record<string, CustomEffectDefinition> {
+    const result: Record<string, CustomEffectDefinition> = {};
+    const folder = vscode.workspace.workspaceFolders?.[0];
+    if (!folder) return result;
+    const filePath = path.join(folder.uri.fsPath, '.vscode', 'dragon-survival-custom-effects.json');
+    try {
+        const text = fs.readFileSync(filePath, 'utf-8');
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) {
+            for (const def of parsed) {
+                if (def && typeof def.type === 'string' && !result[def.type]) {
+                    result[def.type] = {
+                        type: def.type,
+                        fields: Array.isArray(def.fields) ? def.fields.filter((x: unknown): x is string => typeof x === 'string') : [],
+                        required: Array.isArray(def.required) ? def.required.filter((x: unknown): x is string => typeof x === 'string') : [],
+                        fieldInfo: def.fieldInfo && typeof def.fieldInfo === 'object' ? def.fieldInfo : undefined
+                    };
+                }
+            }
+        }
+    } catch {
+        // File may not exist yet.
+    }
+    return result;
 }
 
 function getCustomEffectDefinitions(): Record<string, CustomEffectDefinition> {
@@ -65,11 +99,13 @@ function getCustomEffectDefinitions(): Record<string, CustomEffectDefinition> {
         if (def && typeof def.type === 'string' && !result[def.type]) {
             result[def.type] = {
                 type: def.type,
-                fields: Array.isArray(def.fields) ? def.fields.filter((x): x is string => typeof x === 'string') : [],
-                required: Array.isArray(def.required) ? def.required.filter((x): x is string => typeof x === 'string') : []
+                fields: Array.isArray(def.fields) ? def.fields.filter((x: unknown): x is string => typeof x === 'string') : [],
+                required: Array.isArray(def.required) ? def.required.filter((x: unknown): x is string => typeof x === 'string') : [],
+                fieldInfo: def.fieldInfo && typeof def.fieldInfo === 'object' ? def.fieldInfo : undefined
             };
         }
     }
+    Object.assign(result, getProjectCustomEffectDefinitions());
     return result;
 }
 
@@ -80,6 +116,9 @@ function getCustomEffectTypes(): string[] {
     const all = new Set<string>(simple);
     for (const def of defs) {
         if (def && typeof def.type === 'string') all.add(def.type);
+    }
+    for (const def of Object.values(getProjectCustomEffectDefinitions())) {
+        all.add(def.type);
     }
     return [...all];
 }
@@ -241,6 +280,12 @@ function getResolvedStruct(currentStruct: string | undefined, path: (string | nu
                     struct: mergeStructs(base, variant)
                 };
             }
+            if (dispatch.registry === 'dragonsurvival:projectile_targeting' && value === 'dragonsurvival:point') {
+                // `dragonsurvival:point` is a valid projectile target type but has
+                // no extra variant fields (unlike `dragonsurvival:area`). It must
+                // not inherit radius/particle_trail from AreaTarget.
+                return { baseName: currentStruct, struct: base };
+            }
             // Discriminator missing/unknown: don't flag fields that belong to any
             // variant. Keep the base required key visible so "missing required"
             // still fires, but allow all variant fields.
@@ -318,6 +363,17 @@ function inferChildStruct(candidates: string[], obj: Record<string, unknown>): s
     return undefined;
 }
 
+function isProjectileContext(currentStruct: string | undefined, path: (string | number)[]): boolean {
+    // Only structs from data/dragonsurvival/projectile_data are projectile
+    // contexts. In particular ProjectileEffect_Entity__data_dragonsurvival_dragon_ability
+    // is a dragon ability struct and must NOT be treated as projectile data.
+    if (currentStruct && currentStruct.endsWith('__data_dragonsurvival_projectile_data')) return true;
+    return path.includes('projectile_data') || path.includes('projectile_targeting') ||
+        path.includes('entity_hit_effects') || path.includes('block_hit_effects') ||
+        path.includes('common_hit_effects') || path.includes('ticking_effects') ||
+        path.includes('on_destroy_effects');
+}
+
 function validateDocument(document: vscode.TextDocument, collection: vscode.DiagnosticCollection): void {
     const kind = detectKind(document.uri);
     if (!kind) {
@@ -334,7 +390,7 @@ function validateDocument(document: vscode.TextDocument, collection: vscode.Diag
     const diagnostics: vscode.Diagnostic[] = [];
     const rootStruct = KIND_TO_STRUCT[kind];
     if (json && typeof json === 'object' && !Array.isArray(json) && rootStruct) {
-        validateNode(json, [], diagnostics, document, rootStruct);
+        validateNode(json, [], diagnostics, document, rootStruct, kind);
     }
 
     collection.set(document.uri, diagnostics);
@@ -345,11 +401,12 @@ function validateNode(
     path: (string | number)[],
     diagnostics: vscode.Diagnostic[],
     document: vscode.TextDocument,
-    currentStruct?: string
+    currentStruct: string | undefined,
+    kind: string | undefined
 ): void {
     if (Array.isArray(node)) {
         for (let i = 0; i < node.length; i++) {
-            validateNode(node[i], [...path, i], diagnostics, document, currentStruct);
+            validateNode(node[i], [...path, i], diagnostics, document, currentStruct, kind);
         }
         return;
     }
@@ -360,28 +417,15 @@ function validateNode(
 
     const obj = node as Record<string, unknown>;
     let resolved = getResolvedStruct(currentStruct, path, obj);
-    const customEffectType = typeof obj['effect_type'] === 'string' ? obj['effect_type'] as string : undefined;
-    if (resolved && customEffectType &&
-        (currentStruct === 'EntityEffect__data_dragonsurvival_dragon_ability' || currentStruct === 'BlockEffect__data_dragonsurvival_dragon_ability')) {
-        const def = getCustomEffectDefinitions()[customEffectType];
-        if (def) {
-            const required = new Set<string>([...resolved.struct.required, ...(def.required || [])]);
-            const optional = new Set<string>([...resolved.struct.optional, ...(def.fields || [])]);
-            for (const key of required) optional.delete(key);
-            resolved = {
-                ...resolved,
-                struct: {
-                    required: [...required],
-                    optional: [...optional]
-                }
-            };
-        }
-    }
+    const customContext = getCustomFieldContext(kind, currentStruct, path, obj);
 
     if (resolved && !isPermissiveStruct(currentStruct)) {
         const allowed = new Set<string>([...resolved.struct.required, ...resolved.struct.optional]);
         for (const extra of EXTRA_OPTIONAL_FIELDS[currentStruct || ''] || []) {
             allowed.add(extra);
+        }
+        for (const key of customContext.fields) {
+            allowed.add(key);
         }
         for (const key of Object.keys(obj)) {
             if (!allowed.has(key)) {
@@ -394,10 +438,14 @@ function validateNode(
             }
         }
 
-        const missing = (resolved.missingRequired || resolved.struct.required).filter(key => !(key in obj));
-        if (missing.length > 0) {
+        const missing = new Set<string>((resolved.missingRequired || resolved.struct.required).filter(key => !(key in obj)));
+        for (const key of customContext.required) {
+            if (!(key in obj)) missing.add(key);
+        }
+        const missingArr = [...missing];
+        if (missingArr.length > 0) {
             const range = findDiscriminantRange(document, obj, path);
-            for (const key of missing) {
+            for (const key of missingArr) {
                 diagnostics.push(new vscode.Diagnostic(
                     range,
                     `缺少必需字段: "${key}"`,
@@ -408,7 +456,18 @@ function validateNode(
     }
 
     for (const [key, child] of Object.entries(obj)) {
-        if (typeof child === 'string' && ENUM_VALUES[key] && !ENUM_VALUES[key].includes(child) && !(key === 'effect_type' && getCustomEffectTypes().includes(child))) {
+        const inProjectile = isProjectileContext(currentStruct, path);
+        const enumValues = inProjectile && key === 'target_type'
+            ? ENUM_VALUES['projectile_target_type']
+            : inProjectile && key === 'entity_effect'
+                ? ENUM_VALUES['projectile_entity_effect_type']
+                : inProjectile && key === 'block_effect'
+                    ? ENUM_VALUES['projectile_block_effect_type']
+                    : inProjectile && key === 'world_effect'
+                        ? ENUM_VALUES['projectile_world_effect_type']
+                        : ENUM_VALUES[key];
+        const customValues = getCustomValuesForContext(key, kind, currentStruct, path);
+        if (typeof child === 'string' && enumValues && !enumValues.includes(child) && !customValues.includes(child)) {
             diagnostics.push(new vscode.Diagnostic(
                 findValueRange(document, key, child),
                 `无效的 ${key} 值: "${child}"`,
@@ -431,10 +490,10 @@ function validateNode(
                 if (candidates.length > 1 && item && typeof item === 'object' && !Array.isArray(item)) {
                     itemStruct = inferChildStruct(candidates, item as Record<string, unknown>) || undefined;
                 }
-                validateNode(item, [...path, key, i], diagnostics, document, itemStruct);
+                validateNode(item, [...path, key, i], diagnostics, document, itemStruct, kind);
             }
         } else {
-            validateNode(child, [...path, key], diagnostics, document, childStruct);
+            validateNode(child, [...path, key], diagnostics, document, childStruct, kind);
         }
     }
 }

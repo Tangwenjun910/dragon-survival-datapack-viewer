@@ -21,7 +21,8 @@
         showRawFieldKeys: true,
         rememberScrollPosition: true,
         showResourcePreviews: true,
-        showReferences: true
+        showReferences: true,
+        abilitySortOrder: 'alphabetical'
     };
     let savedScrollTop = persistedState.savedScrollTop || 0;
     let resourceFileMap = {};
@@ -57,6 +58,11 @@
             let merged = mergeMcdocStructs(structs[baseName], structs[name]);
             if (registry.includes('effect')) merged = augmentCustomEffectStruct(value, merged);
             return merged;
+        }
+        if (baseName === 'ProjectileTargeting__data_dragonsurvival_projectile_data' && value === 'dragonsurvival:point') {
+            // `dragonsurvival:point` is valid but has no extra variant fields;
+            // it must not inherit radius/particle_trail from AreaTarget.
+            return structs[baseName] || { required: [], optional: [] };
         }
         // Discriminator missing/unknown: allow all variant fields, but only
         // report the base required fields as missing (e.g. target_type).
@@ -108,20 +114,16 @@
         if (isDispatchContainerPath(path, 'target_selection')) {
             return resolveDispatchStruct('Targeting__data_dragonsurvival_dragon_ability', 'dragonsurvival:ability_targeting', targetType);
         }
-        if (isDispatchContainerPath(path, 'effect')) {
+        if (isDispatchContainerPath(path, 'effect') && currentDetail && currentDetail.kind === 'dragon_penalty') {
             return resolveDispatchStruct('PenaltyEffect__data_dragonsurvival_dragon_penalty', 'dragonsurvival:penalty_effect', penaltyType);
         }
-        if (isDispatchContainerPath(path, 'trigger')) {
-            if ('penalty_trigger' in obj || typeof obj.penalty_trigger === 'string') {
+        if (isDispatchContainerPath(path, 'trigger') && currentDetail) {
+            if (currentDetail.kind === 'dragon_penalty') {
                 return resolveDispatchStruct('PenaltyTrigger__data_dragonsurvival_dragon_penalty', 'dragonsurvival:penalty_trigger', penaltyTrigger);
             }
-            if ('trigger_type' in obj || typeof obj.trigger_type === 'string') {
+            if (currentDetail.kind === 'dragon_ability') {
                 return resolveDispatchStruct('ActivationTrigger__data_dragonsurvival_dragon_ability', 'dragonsurvival:activation_trigger', triggerType);
             }
-            if (path.includes('activation')) {
-                return resolveDispatchStruct('ActivationTrigger__data_dragonsurvival_dragon_ability', 'dragonsurvival:activation_trigger', triggerType);
-            }
-            return resolveDispatchStruct('PenaltyTrigger__data_dragonsurvival_dragon_penalty', 'dragonsurvival:penalty_trigger', penaltyTrigger);
         }
         if (isDispatchContainerPath(path, 'applied_effects')) {
             const structs = mcdocSchema.structs || {};
@@ -132,6 +134,22 @@
             }
             if ('entity_effect' in obj) return entityTargeting || null;
             if ('block_effect' in obj) return blockTargeting || null;
+        }
+        if (currentDetail && currentDetail.kind === 'projectile_data') {
+            // Resolve projectile-specific dispatch objects so the UI can flag
+            // fields that only belong to another target/effect variant.
+            if (typeof obj.target_type === 'string') {
+                return resolveDispatchStruct('ProjectileTargeting__data_dragonsurvival_projectile_data', 'dragonsurvival:projectile_targeting', targetType);
+            }
+            if (typeof obj.entity_effect === 'string') {
+                return resolveDispatchStruct('ProjectileEntityEffect__data_dragonsurvival_projectile_data', 'dragonsurvival:projectile_entity_effect', obj.entity_effect);
+            }
+            if (typeof obj.block_effect === 'string') {
+                return resolveDispatchStruct('ProjectileBlockEffect__data_dragonsurvival_projectile_data', 'dragonsurvival:projectile_block_effect', obj.block_effect);
+            }
+            if (typeof obj.world_effect === 'string') {
+                return resolveDispatchStruct('ProjectileWorldEffect__data_dragonsurvival_projectile_data', 'dragonsurvival:projectile_world_effect', obj.world_effect);
+            }
         }
         return null;
     }
@@ -554,6 +572,21 @@
                 return;
             }
 
+            const refJumpBtn = target.closest('.ref-jump-btn');
+            if (refJumpBtn) {
+                const kind = refJumpBtn.getAttribute('data-ref-kind') || '';
+                const id = refJumpBtn.getAttribute('data-ref-id') || '';
+                if (kind && id) showDetailByFullId(kind, id);
+                return;
+            }
+
+            const refOpenBtn = target.closest('.ref-open-btn');
+            if (refOpenBtn) {
+                const filePath = decodeURIComponent(refOpenBtn.getAttribute('data-ref-file') || '');
+                if (filePath) send({ type: 'openFile', filePath });
+                return;
+            }
+
             const addMapBtn = target.closest('.add-map-entry');
             if (addMapBtn) {
                 const path = JSON.parse(decodeURIComponent(addMapBtn.getAttribute('data-map-path') || '[]'));
@@ -827,7 +860,7 @@
 
         const species = getEntries(ns, 'dragon_species');
         const stages = getEntries(ns, 'dragon_stage');
-        const abilities = getEntries(ns, 'dragon_ability');
+        const abilities = sortAbilities(getEntries(ns, 'dragon_ability'));
         const penalties = getEntries(ns, 'dragon_penalty');
         const projectiles = getEntries(ns, 'projectile_data');
         // 数据映射、龙体、表情组、标签必须固定放在 dragonsurvival 命名空间下。
@@ -1006,10 +1039,9 @@
         return `
             <div class="card" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
                 <div class="card-header">
-                    <span class="card-title">${kindLabel(entry.kind)}</span>
+                    <span class="card-title">${entryTitle(entry)}</span>
                     <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
                 </div>
-                <div class="card-subtitle">${entryTitle(entry)}</div>
                 <div class="card-subtitle">${esc(entry.filePath)}</div>
             </div>`;
     }
@@ -1061,7 +1093,7 @@
         const d = entry.data || {};
         const meta = entry.meta || {};
         const stages = (meta.stages && meta.stages.length > 0) ? meta.stages : getDefaultStages(getCurrentNamespace());
-        const abilities = meta.abilities || [];
+        const abilities = sortAbilityIds(meta.abilities || []);
         const penalties = meta.penalties || [];
         const colors = (d.misc_resources || {});
         const primary = colors.primary_color || '#FFFFFF';
@@ -1078,6 +1110,9 @@
                 }).join('')}
             </div>` : '<div class="card-subtitle">未配置自定义阶段链</div>';
 
+        const abilityChips = renderChips(abilities.slice(0, 12), 'dragon_ability', '能力');
+        const penaltyChips = renderChips(penalties.slice(0, 8), 'dragon_penalty', '惩罚');
+
         return `
             <div class="card species-card" style="--species-color:${esc(primary)}" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
                 <div class="card-header">
@@ -1086,17 +1121,21 @@
                     <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
                 </div>
                 <div class="card-subtitle">${esc(entry.filePath)}</div>
-                <div class="color-swatches">
-                    <span class="color-swatch" style="background:${esc(primary)}" title="主色 ${esc(primary)}"></span>
-                    <span class="color-swatch" style="background:${esc(secondary)}" title="辅色 ${esc(secondary)}"></span>
-                </div>
-                <div class="color-hex-list">
-                    <span class="chip">主 ${esc(primary)}</span>
-                    <span class="chip">辅 ${esc(secondary)}</span>
+                <div class="species-colors">
+                    <div class="species-color-item"><span class="color-swatch" style="background:${esc(primary)}" title="主色 ${esc(primary)}"></span><span class="color-hex">主 ${esc(primary)}</span></div>
+                    <div class="species-color-item"><span class="color-swatch" style="background:${esc(secondary)}" title="辅色 ${esc(secondary)}"></span><span class="color-hex">辅 ${esc(secondary)}</span></div>
                 </div>
                 ${flowHtml}
-                ${renderChips(abilities.slice(0, 12), 'dragon_ability', '能力')}
-                ${renderChips(penalties.slice(0, 8), 'dragon_penalty', '惩罚')}
+                <div class="species-relations">
+                    <div class="species-relation-row">
+                        <span class="species-kind-badge ability">能力</span>
+                        <span class="species-names">${abilityChips || '<span class="chip muted-chip">无</span>'}</span>
+                    </div>
+                    <div class="species-relation-row">
+                        <span class="species-kind-badge penalty">惩罚</span>
+                        <span class="species-names">${penaltyChips || '<span class="chip muted-chip">无</span>'}</span>
+                    </div>
+                </div>
             </div>`;
     }
 
@@ -1105,7 +1144,7 @@
         const max = 12;
         const shown = ids.slice(0, max);
         const more = ids.length - shown.length;
-        return `<div class="chip-list"><span class="badge">${label}</span>${shown.map(id => `<span class="chip">${esc(shortName(id))}</span>`).join('')}${more > 0 ? `<span class="chip">+${more}</span>` : ''}</div>`;
+        return `<span class="species-chips">${shown.map(id => `<span class="chip">${esc(shortName(id))}</span>`).join('')}${more > 0 ? `<span class="chip">+${more}</span>` : ''}</span>`;
     }
 
     // ---------- Detail ----------
@@ -1121,7 +1160,7 @@
         for (const ns of namespaces) {
             for (const tag of ns.tags || []) {
                 if (tag.registry === entry.kind && (tag.values || []).some(v => v === full || v === `#${full}` || v === idOnly)) {
-                    refs.push({ type: 'tag', label: `${tr('标签', 'Tag')} ${tag.id}`, filePath: tag.filePath });
+                    refs.push({ type: 'tag', label: `${tr('标签', 'Tag')} ${tag.id}`, filePath: tag.filePath, namespace: tag.namespace, id: tag.id });
                 }
             }
         }
@@ -1130,7 +1169,7 @@
             if (other.filePath === entry.filePath) continue;
             const raw = JSON.stringify(other.data || '');
             if (raw.includes(full) || raw.includes(`"${idOnly}"`)) {
-                refs.push({ type: 'entry', label: `${kindLabel(other.kind)} ${other.namespace}:${other.id}`, filePath: other.filePath });
+                refs.push({ type: 'entry', label: `${kindLabel(other.kind)} ${other.namespace}:${other.id}`, filePath: other.filePath, kind: other.kind, id: `${other.namespace}:${other.id}` });
             }
         }
 
@@ -1149,7 +1188,13 @@
         return `
             <div class="section-title">🔗 ${tr('引用', 'References')} (${refs.length})</div>
             <div class="ref-list">
-                ${refs.map(ref => `<div class="ref-item"><span class="ref-label">${esc(ref.label)}</span><span class="ref-path">${esc(ref.filePath)}</span></div>`).join('')}
+                ${refs.map(ref => `
+                    <div class="ref-item">
+                        <span class="ref-label">${esc(ref.label)}</span>
+                        <span class="ref-path">${esc(ref.filePath)}</span>
+                        ${ref.kind && ref.id ? `<button class="ref-jump-btn" data-ref-kind="${esc(ref.kind)}" data-ref-id="${esc(ref.id)}">跳转</button>` : ''}
+                        <button class="ref-open-btn back-button" data-ref-file="${encodeURIComponent(ref.filePath)}">打开</button>
+                    </div>`).join('')}
             </div>`;
     }
 
@@ -1197,6 +1242,7 @@
             <div class="detail-path">${esc(entry.filePath)}</div>
             ${renderMissingRequiredWarning(entry)}
             ${renderReferenceSection(entry)}
+            ${renderRelatedLocalizations(entry)}
             ${body}
             <details>
                 <summary>查看原始 JSON</summary>
@@ -1230,7 +1276,7 @@
         const d = entry.data || {};
         const meta = entry.meta || {};
         const stages = (meta.stages && meta.stages.length > 0) ? meta.stages : getDefaultStages(getCurrentNamespace());
-        const abilities = meta.abilities || [];
+        const abilities = sortAbilityIds(meta.abilities || []);
         const penalties = meta.penalties || [];
         const colors = d.misc_resources || {};
         const primaryColor = colors.primary_color || '#FFFFFF';
@@ -1407,7 +1453,7 @@
         const actions = d.actions || [];
         const icon = d.icon || {};
 
-        const iconEntries = (icon.texture_entries || []).map(ie => `<span class="chip">Lv${ie.from_level} → ${esc(shortName(ie.texture_resource))}</span>`).join('');
+        const iconEntries = (icon.texture_entries || []).map(ie => `<span class="chip">Lv${ie.from_level} → ${esc(shortName(ie.texture_resource))}${resourcePreviewHtml(String(ie.texture_resource || ''))}</span>`).join('');
         const rootSchema = getAbilitySchema([], d);
         const rootPalette = renderFieldPalette([], d, false, false, rootSchema.addable);
 
@@ -1661,6 +1707,7 @@
 
         if (typeof value === 'object') {
             const entries = Object.entries(value);
+
             const encodedPath = encodeURIComponent(JSON.stringify(path));
             const isMap = path.length > 0 && path[path.length - 1] === 'values';
 
@@ -1679,6 +1726,9 @@
                 </div>`;
             }
 
+            const mdocStruct = resolveMcdocStruct(path, value);
+            const customContext = getCustomFieldContext(currentDetail && currentDetail.kind, path, value);
+            const effectiveStruct = mdocStruct ? applyCustomFieldContext(mdocStruct, customContext) : null;
             const schema = currentDetail && currentDetail.kind === 'dragon_ability'
                 ? getAbilitySchema(path, value)
                 : currentDetail && currentDetail.kind === 'dragon_species'
@@ -1687,11 +1737,12 @@
             const schemaAddable = schema ? schema.addable : null;
             const deletableFields = schema && Object.keys(schema.addable).length > 0
                 ? Object.keys(value).filter(field => !schema.required.includes(field))
-                : [];
-            const mdocStruct = resolveMcdocStruct(path, value);
-            const structWarning = renderStructMissingWarning(mdocStruct, value, path);
-            const missingRequired = mdocStruct
-                ? (mdocStruct.required || []).filter(k => !Object.prototype.hasOwnProperty.call(value, k))
+                : effectiveStruct
+                    ? Object.keys(value).filter(field => !(effectiveStruct.required || []).includes(field))
+                    : [];
+            const structWarning = renderStructMissingWarning(effectiveStruct, value, path);
+            const missingRequired = effectiveStruct
+                ? (effectiveStruct.required || []).filter(k => !Object.prototype.hasOwnProperty.call(value, k))
                 : [];
             const objectClass = missingRequired.length > 0 ? ' form-object-missing' : '';
 
@@ -1711,12 +1762,13 @@
                 const label = humanizeKey(key);
                 const childPath = [...path, key];
                 const pathStr = encodeURIComponent(JSON.stringify(path));
-                const mdocAllowed = mdocStruct ? new Set([...(mdocStruct.required || []), ...(mdocStruct.optional || [])]) : null;
+                const mdocAllowed = effectiveStruct ? new Set([...(effectiveStruct.required || []), ...(effectiveStruct.optional || [])]) : null;
                 const invalidKey = mdocAllowed && !mdocAllowed.has(key);
                 const invalidValue = isInvalidEnumValue(childPath, key, val);
                 const invalid = invalidKey || invalidValue;
                 const invalidClass = invalid ? ' invalid-field' : '';
                 const invalidTitle = invalid ? ' title="可能存在无效字段或枚举值"' : '';
+
                 const deleteBtn = canDeleteField && key !== 'items' && (isProperties || isDietEntryRoot || deletableFields.includes(key))
                     ? `<button class="delete-field-btn" data-map-path="${pathStr}" data-field-key="${esc(key)}" title="删除字段">🗑</button>`
                     : '';
@@ -1742,8 +1794,17 @@
 
                 const fieldPath = encodeURIComponent(JSON.stringify(childPath));
                 const fieldKey = childPath[childPath.length - 1];
-                const enumKey = fieldKey === 'effect_type' && childPath.includes('block_effect') ? 'block_effect_type' : fieldKey;
-                const enumOptions = ENUM_OPTIONS[enumKey];
+                const enumKey = getEnumOptionKey(childPath, fieldKey);
+                const baseEnumOptions = ENUM_OPTIONS[enumKey] || [];
+                const customEnumValues = getCustomValuesForContext(fieldKey, currentDetail && currentDetail.kind, childPath);
+                const enumOptions = baseEnumOptions.length > 0 || customEnumValues.length > 0
+                    ? [
+                        ...baseEnumOptions,
+                        ...customEnumValues
+                            .filter(v => !baseEnumOptions.some(o => o.value === v))
+                            .map(v => ({ value: v, label: v }))
+                    ]
+                    : undefined;
                 let fieldControl;
 
                 if (enumOptions) {
@@ -1752,8 +1813,22 @@
                     const optionsHtml = enumOptions.map(option =>
                         `<option value="${esc(option.value)}">${esc(getEnumLabel(option))}</option>`
                     ).join('');
-                    fieldControl = `<input class="form-input st-edit-field st-enum-field" list="${listId}" data-edit-path="${fieldPath}" value="${esc(currentValue)}" placeholder="选择或输入自定义值">
-                        <datalist id="${listId}">${optionsHtml}</datalist>`;
+                    if (fieldKey === 'target_type') {
+                        // target_type has a small closed list (e.g. projectile
+                        // area/point). Use a real <select> so all options remain
+                        // visible even when a value is already selected.
+                        const selectedOptionsHtml = enumOptions.map(option =>
+                            `<option value="${esc(option.value)}" ${option.value === currentValue ? 'selected' : ''}>${esc(getEnumLabel(option))}</option>`
+                        ).join('');
+                        const hasCurrent = enumOptions.some(option => option.value === currentValue);
+                        fieldControl = `<select class="form-select st-edit-field" data-edit-path="${fieldPath}">
+                            ${selectedOptionsHtml}
+                            ${!hasCurrent ? `<option value="${esc(currentValue)}">${esc(currentValue)}</option>` : ''}
+                        </select>`;
+                    } else {
+                        fieldControl = `<input class="form-input st-edit-field st-enum-field" list="${listId}" data-edit-path="${fieldPath}" value="${esc(currentValue)}" placeholder="选择或输入自定义值">
+                            <datalist id="${listId}">${optionsHtml}</datalist>`;
+                    }
                 } else if (typeof val === 'boolean') {
                     fieldControl = `<select class="form-select st-edit-field" data-edit-path="${fieldPath}">
                         <option value="true" ${val ? 'selected' : ''}>是</option>
@@ -2321,6 +2396,29 @@
             { value: 'dragonsurvival:self', label: '自身 Self' },
             { value: 'dragonsurvival:disc', label: '圆柱区域 Disc' }
         ],
+        projectile_target_type: [
+            { value: 'dragonsurvival:area', label: '区域 Area' },
+            { value: 'dragonsurvival:point', label: '执行者当前位置 Executor Position' }
+        ],
+        projectile_entity_effect_type: [
+            { value: 'dragonsurvival:damage', label: '造成伤害 Damage' },
+            { value: 'dragonsurvival:potion', label: '药水效果 Potion' },
+            { value: 'dragonsurvival:lightning', label: '闪电 Lightning' },
+            { value: 'dragonsurvival:particle', label: '粒子 Particle' },
+            { value: 'dragonsurvival:run_function', label: '运行函数 Run Function' },
+            { value: 'dragonsurvival:push', label: '推动 Push' }
+        ],
+        projectile_block_effect_type: [
+            { value: 'dragonsurvival:particle', label: '粒子 Particle' },
+            { value: 'dragonsurvival:run_function', label: '运行函数 Run Function' },
+            { value: 'dragonsurvival:area_cloud', label: '药水云 Area Cloud' }
+        ],
+        projectile_world_effect_type: [
+            { value: 'dragonsurvival:explosion', label: '爆炸 Explosion' },
+            { value: 'dragonsurvival:lightning', label: '闪电 Lightning' },
+            { value: 'dragonsurvival:particle', label: '粒子 Particle' },
+            { value: 'dragonsurvival:run_function', label: '运行函数 Run Function' }
+        ],
         effect_type: [
             { value: 'dragonsurvival:damage', label: '造成伤害 Damage' },
             { value: 'dragonsurvival:modifier', label: '属性修改 Modifier' },
@@ -2497,7 +2595,18 @@
         return spaced.charAt(0).toUpperCase() + spaced.slice(1);
     }
 
+    function getCustomEffectFieldName(key) {
+        for (const def of (settings.customEffects || [])) {
+            if (def.fieldNames && typeof def.fieldNames[key] === 'string') return def.fieldNames[key];
+        }
+        return null;
+    }
+
     function fieldLabel(key) {
+        const customName = getCustomEffectFieldName(key);
+        if (customName) {
+            return `<span class="form-label">${esc(customName)}</span>`;
+        }
         if (settings.showRawFieldKeys) {
             return `<span class="form-label">${esc(humanizeKey(key))} <span class="raw-key">${esc(key)}</span></span>`;
         }
@@ -2525,7 +2634,7 @@
 
     function augmentCustomEffectStruct(value, struct) {
         if (!value || !struct) return struct;
-        const def = (settings.customEffects || []).find(d => d && d.type === value);
+        const def = getAllCustomDefinitions().find(d => d && (d.value === value || d.type === value));
         if (!def) return struct;
         const required = [...(struct.required || [])];
         const optional = [...(struct.optional || [])];
@@ -2542,12 +2651,110 @@
         return { required, optional };
     }
 
+    function normalizeCustomDefinition(def) {
+        if (!def || typeof def !== 'object') return null;
+        const d = Object.assign({}, def);
+        if (d.value === undefined && d.type !== undefined) d.value = d.type;
+        if ((d.value !== undefined || d.key !== undefined) && d.key === undefined) {
+            d.key = 'effect_type';
+            d.target = d.target || 'dragon_ability';
+        }
+        return d;
+    }
+
+    function getAllCustomDefinitions() {
+        return (settings.customEffects || []).map(normalizeCustomDefinition).filter(Boolean);
+    }
+
+    function customPathMatches(pattern, actual) {
+        if (!pattern || pattern.length === 0) return true;
+        if (pattern.length > actual.length) return false;
+        for (let i = 0; i < pattern.length; i++) {
+            const p = pattern[i];
+            if (p === '*') continue;
+            if (p !== actual[i]) return false;
+        }
+        return true;
+    }
+
+    function customDefinitionMatches(def, context) {
+        if (!def) return false;
+        if (def.target && def.target !== context.kind) return false;
+        if (def.path && !customPathMatches(def.path, context.path || [])) return false;
+        if (def.key && def.value !== undefined) {
+            if (!context.obj) return true;
+            if (context.obj[def.key] !== def.value) return false;
+        }
+        return true;
+    }
+
+    function getCustomValuesForContext(key, kind, path) {
+        const values = new Set();
+        for (const def of getAllCustomDefinitions()) {
+            if (!def.key || def.key !== key || def.value === undefined) continue;
+            if (customDefinitionMatches(def, { kind, path })) values.add(def.value);
+        }
+        return [...values];
+    }
+
+    function getCustomFieldContext(kind, path, obj) {
+        const fields = new Set();
+        const required = new Set();
+        const fieldInfo = {};
+        const fieldNames = {};
+        for (const def of getAllCustomDefinitions()) {
+            if (!customDefinitionMatches(def, { kind, path, obj })) continue;
+            for (const field of (def.fields || [])) {
+                if (field) fields.add(field);
+            }
+            for (const field of (def.required || [])) {
+                if (field) {
+                    fields.add(field);
+                    required.add(field);
+                }
+            }
+            if (def.fieldInfo) Object.assign(fieldInfo, def.fieldInfo);
+            if (def.fieldNames) Object.assign(fieldNames, def.fieldNames);
+        }
+        return { fields, required, fieldInfo, fieldNames };
+    }
+
+    function applyCustomFieldContext(struct, context) {
+        if (!struct) return null;
+        const required = [...(struct.required || [])];
+        const optional = [...(struct.optional || [])];
+        for (const field of (context.required || [])) {
+            if (!required.includes(field)) required.push(field);
+            if (optional.includes(field)) optional.splice(optional.indexOf(field), 1);
+        }
+        for (const field of (context.fields || [])) {
+            if (!required.includes(field) && !optional.includes(field)) optional.push(field);
+        }
+        return { required, optional };
+    }
+
+
+    function getEnumOptionKey(path, key) {
+        if (currentDetail && currentDetail.kind === 'projectile_data') {
+            // Projectile_data uses its own discriminator fields. It has no
+            // effect_type, so do not map effect_type to a projectile list.
+            if (key === 'target_type') return 'projectile_target_type';
+            if (key === 'entity_effect') return 'projectile_entity_effect_type';
+            if (key === 'block_effect') return 'projectile_block_effect_type';
+            if (key === 'world_effect') return 'projectile_world_effect_type';
+            return key;
+        }
+        if (key === 'effect_type' && path.includes('block_effect')) return 'block_effect_type';
+        return key;
+    }
+
     function isInvalidEnumValue(path, key, value) {
         if (typeof value !== 'string') return false;
-        const fieldKey = key === 'effect_type' && path.includes('block_effect') ? 'block_effect_type' : key;
-        const options = ENUM_OPTIONS[fieldKey];
-        if (!options) return false;
-        return !options.some(option => option.value === value);
+        const fieldKey = getEnumOptionKey(path, key);
+        const options = ENUM_OPTIONS[fieldKey] || [];
+        const customValues = getCustomValuesForContext(key, currentDetail && currentDetail.kind, path);
+        if (options.length === 0 && customValues.length === 0) return false;
+        return !options.some(option => option.value === value) && !customValues.includes(value);
     }
 
     function formatValue(value) {
@@ -2578,6 +2785,7 @@
         return `
             <div class="info-grid">${infoItems}</div>
             ${d.condition ? `
+              ${d.icon ? `<div class="section-title">${tr('图标', 'Icon')}</div><div>${resourcePreviewHtml(String(d.icon)) || `<span class="chip">${esc(String(d.icon))}</span>`}</div>` : ''}
                 <div class="section-title">触发条件</div>
                 <div class="ability-editor">${renderStructuredForm(d.condition, 0, ['condition'])}</div>` : ''}
             <div class="section-title">⚠️ ${esc(t('effect'))}</div>
@@ -2625,6 +2833,7 @@
 
         return `
             <div class="info-grid">${infoItems}</div>
+              ${d.default_icon ? `<div class="section-title">${tr('默认图标', 'Default Icon')}</div><div>${resourcePreviewHtml(String(d.default_icon)) || `<span class="chip">${esc(String(d.default_icon))}</span>`}</div>` : ''}
             <div class="section-title">属性修正 (${(d.modifiers || []).length})</div>
             ${renderStructuredForm(d.modifiers || [], 0, ['modifiers'])}
             <div class="section-title">缩放比例</div>
@@ -2680,7 +2889,10 @@
         if (!ids || ids.length === 0) return '<div class="empty-state">无</div>';
         const rows = ids.map(id => {
             const entry = findEntry(kind, id);
-            return `<tr><td>${esc(id)}</td><td>${entry ? `<span class="chip">${esc(entry.kind)}</span>` : '<span class="chip" style="color:var(--error)">未找到</span>'}</td></tr>`;
+            const status = entry
+                ? `<span class="chip">${esc(entry.kind)}</span> <button class="ref-jump-btn" data-ref-kind="${esc(kind)}" data-ref-id="${esc(id)}">跳转</button>`
+                : '<span class="chip" style="color:var(--error)">未找到</span>';
+            return `<tr><td>${esc(id)}</td><td>${status}</td></tr>`;
         }).join('');
         return `<table><thead><tr><th>ID</th><th>状态</th></tr></thead><tbody>${rows}</tbody></table>`;
     }
@@ -2748,6 +2960,27 @@
     }
 
     function getEditorEnumItems(key) {
+        const kind = editingEntry && editingEntry.kind;
+        const isProjectileEditor = kind === 'projectile_data';
+        const customValues = getCustomValuesForContext(key, kind, []);
+        const mergeCustom = (options) => {
+            const merged = [...(options || [])];
+            for (const value of customValues) {
+                if (!merged.some(option => option.value === value)) {
+                    merged.push({ value, label: value });
+                }
+            }
+            return merged.map(option => ({ label: option.value, insert: option.value }));
+        };
+
+        if (isProjectileEditor) {
+            // Projectile files use entity_effect/block_effect/world_effect as
+            // discriminator keys, not the ability's effect_type.
+            if (key === 'target_type') return mergeCustom(ENUM_OPTIONS['projectile_target_type'] || []);
+            if (key === 'entity_effect') return mergeCustom(ENUM_OPTIONS['projectile_entity_effect_type'] || []);
+            if (key === 'block_effect') return mergeCustom(ENUM_OPTIONS['projectile_block_effect_type'] || []);
+            if (key === 'world_effect') return mergeCustom(ENUM_OPTIONS['projectile_world_effect_type'] || []);
+        }
         let options = ENUM_OPTIONS[key] || [];
         if (key === 'effect_type') {
             options = [
@@ -2755,7 +2988,7 @@
                 ...(ENUM_OPTIONS['block_effect_type'] || [])
             ];
         }
-        return options.map(option => ({ label: option.value, insert: option.value }));
+        return mergeCustom(options);
     }
 
     function refreshCompletionPanel() {
@@ -2785,9 +3018,18 @@
         $('editorTitle').textContent = `编辑 ${entry.id} (${entry.kind})`;
         $('editorText').value = JSON.stringify(entry.data, null, 2);
         $('editorError').textContent = '';
+        const relatedEl = $('editorRelated');
+        if (relatedEl) relatedEl.innerHTML = renderRelatedLocalizations(entry);
         $('editorOverlay').hidden = false;
         $('editorText').focus();
         refreshCompletionPanel();
+    }
+
+    function closeEditor() {
+        $('editorOverlay').hidden = true;
+        editingEntry = null;
+        const relatedEl = $('editorRelated');
+        if (relatedEl) relatedEl.innerHTML = '';
     }
 
     function closeEditor() {
@@ -2858,6 +3100,57 @@
         return (ns.entries || []).filter(e => e.kind === kind);
     }
 
+    function abilitySortName(entry) {
+        return (localizedName(entry) || entry.id || '').toLowerCase();
+    }
+
+    function abilitySortInfo(entry) {
+        const d = entry.data || {};
+        const activationType = (d.activation && d.activation.activation_type) || '';
+        const upgradeType = (d.upgrade && d.upgrade.upgrade_type) || '';
+        const isPassive = activationType === 'dragonsurvival:passive';
+        const isXpCost = upgradeType === 'dragonsurvival:experience_points' || upgradeType === 'dragonsurvival:experience_levels';
+        const typeRank = !isPassive ? 0 : isXpCost ? 1 : 2;
+        return { typeRank, name: abilitySortName(entry), id: entry.id || '' };
+    }
+
+    function sortAbilities(entries) {
+        if (!Array.isArray(entries)) return entries || [];
+        return entries.slice().sort((a, b) => {
+            const ai = abilitySortInfo(a);
+            const bi = abilitySortInfo(b);
+            if (settings.abilitySortOrder === 'type' && ai.typeRank !== bi.typeRank) {
+                return ai.typeRank - bi.typeRank;
+            }
+            const nameCompare = ai.name.localeCompare(bi.name);
+            return nameCompare !== 0 ? nameCompare : ai.id.localeCompare(bi.id);
+        });
+    }
+
+    function sortAbilityIds(ids) {
+        if (!Array.isArray(ids)) return ids || [];
+        const known = [];
+        const unknown = [];
+        for (const id of ids) {
+            const entry = findEntry('dragon_ability', id);
+            if (entry) {
+                known.push({ id, entry });
+            } else {
+                unknown.push(id);
+            }
+        }
+        known.sort((a, b) => {
+            const ai = abilitySortInfo(a.entry);
+            const bi = abilitySortInfo(b.entry);
+            if (settings.abilitySortOrder === 'type' && ai.typeRank !== bi.typeRank) {
+                return ai.typeRank - bi.typeRank;
+            }
+            const nameCompare = ai.name.localeCompare(bi.name);
+            return nameCompare !== 0 ? nameCompare : ai.id.localeCompare(bi.id);
+        });
+        return [...known.map(item => item.id), ...unknown];
+    }
+
     function getDefaultStages(ns) {
         if (!ns) return [];
         return getEntries(ns, 'dragon_stage')
@@ -2918,15 +3211,50 @@
         return esc(entry.id);
     }
 
+    function getRelatedLocalizationKeys(entry) {
+        if (!entry || !state.model || !state.model.localizedNames) return [];
+        const names = state.model.localizedNames;
+        const prefixes = [
+            `${entry.kind}.${entry.namespace}.${entry.id}`,
+            `dragon_${entry.kind}.${entry.namespace}.${entry.id}`
+        ];
+        return Object.keys(names)
+            .filter(key => prefixes.some(prefix => key.startsWith(prefix + '.')))
+            .sort();
+    }
+
+    function renderRelatedLocalizations(entry) {
+        if (!settings.showLocalizedNames) return '';
+        const names = (state.model && state.model.localizedNames) || {};
+        const keys = getRelatedLocalizationKeys(entry);
+        if (keys.length === 0) return '';
+        const rows = keys.map(key => `<tr><td class="ref-path">${esc(key)}</td><td>${esc(names[key])}</td></tr>`).join('');
+        return `
+            <div class="section-title">📖 ${tr('相关本地化', 'Related Localization')} (${keys.length})</div>
+            <div class="related-localizations"><table><thead><tr><th>${tr('键', 'Key')}</th><th>${tr('值', 'Value')}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    }
+
     function findAssetFilePath(resource) {
         if (!resource) return null;
-        const candidates = [resource, resource + '.png', resource + '.jpg', resource + '.svg'];
-        for (const candidate of candidates) {
-            if (resourceFileMap[candidate]) return resourceFileMap[candidate];
-            const idx = candidate.indexOf(':');
-            if (idx > 0) {
-                const key = candidate.slice(0, idx) + ':' + candidate.slice(idx + 1);
-                if (resourceFileMap[key]) return resourceFileMap[key];
+        const keys = [];
+        const addKey = (key) => {
+            if (key && !keys.includes(key)) keys.push(key);
+        };
+        addKey(resource);
+        const idx = resource.indexOf(':');
+        if (idx > 0) {
+            const namespace = resource.slice(0, idx);
+            let resourcePath = resource.slice(idx + 1);
+            const withoutTexturesPrefix = resourcePath.replace(/^textures\//, '');
+            addKey(`${namespace}:${withoutTexturesPrefix}`);
+            addKey(`${namespace}:gui/sprites/${withoutTexturesPrefix}`);
+            addKey(`${namespace}:textures/${withoutTexturesPrefix}`);
+        }
+        const extensions = ['', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg'];
+        for (const baseKey of keys) {
+            for (const ext of extensions) {
+                const candidate = baseKey + ext;
+                if (resourceFileMap[candidate]) return resourceFileMap[candidate];
             }
         }
         return null;
@@ -3600,6 +3928,9 @@
         if (settingsBtn && !$('customEffectBtn')) {
             settingsBtn.insertAdjacentHTML('afterend', '<button id="customEffectBtn" class="toolbar-btn" title="添加自定义效果">➕ 自定义效果</button>');
         }
+        if (settingsBtn && !$('openCustomEffectsFileBtn')) {
+            settingsBtn.insertAdjacentHTML('afterend', '<button id="openCustomEffectsFileBtn" class="toolbar-btn" title="打开自定义效果配置文件">📄 效果文件</button>');
+        }
 
         if (!$('customEffectOverlay')) {
             const overlay = document.createElement('div');
@@ -3635,6 +3966,13 @@
                 $('customEffectOverlay').hidden = false;
                 const typeInput = $('customEffectType');
                 if (typeInput) typeInput.focus();
+            });
+        }
+
+        const fileBtn = $('openCustomEffectsFileBtn');
+        if (fileBtn) {
+            fileBtn.addEventListener('click', () => {
+                send({ type: 'openCustomEffectsFile' });
             });
         }
 

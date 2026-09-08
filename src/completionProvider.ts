@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { MCDOC_FIELD_INFO } from './mcdocSchema';
+import { getAllCustomDefinitions, getCustomValuesForContext } from './customFields';
 
 const KIND_PATTERNS: Record<string, RegExp> = {
     dragon_ability: /\/data\/[^/]+\/dragonsurvival\/dragon_ability\//i,
@@ -187,6 +188,13 @@ const ENUM_VALUE_LISTS: Record<string, string[]> = {
     activation_type: ['dragonsurvival:passive', 'dragonsurvival:simple', 'dragonsurvival:channeled'],
     upgrade_type: ['dragonsurvival:experience_points', 'dragonsurvival:experience_levels', 'dragonsurvival:dragon_growth', 'dragonsurvival:item_based', 'dragonsurvival:condition_based'],
     target_type: ['dragonsurvival:area', 'dragonsurvival:dragon_breath', 'dragonsurvival:looking_at', 'dragonsurvival:self', 'dragonsurvival:disc'],
+    projectile_target_type: ['dragonsurvival:area', 'dragonsurvival:point'],
+    projectile_entity_effect_type: ['dragonsurvival:damage', 'dragonsurvival:potion', 'dragonsurvival:lightning', 'dragonsurvival:particle', 'dragonsurvival:run_function', 'dragonsurvival:push'],
+    projectile_block_effect_type: ['dragonsurvival:particle', 'dragonsurvival:run_function', 'dragonsurvival:area_cloud'],
+    projectile_world_effect_type: ['dragonsurvival:explosion', 'dragonsurvival:lightning', 'dragonsurvival:particle', 'dragonsurvival:run_function'],
+    entity_effect: [],
+    block_effect: [],
+    world_effect: [],
     effect_type: [
         'dragonsurvival:damage', 'dragonsurvival:modifier', 'dragonsurvival:potion', 'dragonsurvival:projectile',
         'dragonsurvival:summon_entity', 'dragonsurvival:damage_modification', 'dragonsurvival:breath_particles',
@@ -211,14 +219,34 @@ const ENUM_VALUE_LISTS: Record<string, string[]> = {
     cooldown_recovery_action_type: ['set', 'reduce']
 };
 
-function enumItemsForKey(key: string): vscode.CompletionItem[] {
-    const values = [...(ENUM_VALUE_LISTS[key] || [])];
+function enumItemsForKey(key: string, kind?: string): vscode.CompletionItem[] {
+    const projectileDiscriminators = ['entity_effect', 'block_effect', 'world_effect'];
+    if (kind !== 'projectile_data' && projectileDiscriminators.includes(key)) {
+        // These are projectile discriminator keys. In ability files they are
+        // object/array containers, not enum-valued strings, so don't suggest
+        // projectile effect types there.
+        return [];
+    }
+
+    let baseValues = ENUM_VALUE_LISTS[key] || [];
+    if (kind === 'projectile_data') {
+        if (key === 'target_type') {
+            baseValues = ENUM_VALUE_LISTS['projectile_target_type'] || [];
+        } else if (key === 'entity_effect') {
+            baseValues = ENUM_VALUE_LISTS['projectile_entity_effect_type'] || [];
+        } else if (key === 'block_effect') {
+            baseValues = ENUM_VALUE_LISTS['projectile_block_effect_type'] || [];
+        } else if (key === 'world_effect') {
+            baseValues = ENUM_VALUE_LISTS['projectile_world_effect_type'] || [];
+        }
+    }
+    const values = [...baseValues];
+    for (const custom of getCustomValuesForContext(key, kind)) {
+        if (!values.includes(custom)) values.push(custom);
+    }
     if (key === 'effect_type') {
         const config = vscode.workspace.getConfiguration('dragonSurvivalDatapack');
         const customs = new Set<string>(config.get<string[]>('customEffectTypes', []));
-        for (const def of config.get<Array<{ type: string }>>('customEffects', [])) {
-            if (def && typeof def.type === 'string') customs.add(def.type);
-        }
         for (const custom of customs) {
             if (!values.includes(custom)) values.push(custom);
         }
@@ -259,6 +287,29 @@ function applyEnumTextEdits(document: vscode.TextDocument, position: vscode.Posi
     }
 }
 
+function getCustomFieldInfoMap(): Record<string, Record<string, string>> {
+    const map: Record<string, Record<string, string>> = {};
+    for (const def of getAllCustomDefinitions()) {
+        if (def.value && def.fieldInfo) {
+            map[def.value] = Object.assign({}, map[def.value], def.fieldInfo);
+        }
+    }
+    return map;
+}
+
+function getNearestCustomDiscriminatorAt(document: vscode.TextDocument, position: vscode.Position): string | undefined {
+    const text = document.getText();
+    const offset = document.offsetAt(position);
+    const before = text.slice(0, offset);
+    const re = /"(effect_type|entity_effect|block_effect|world_effect)"\s*:\s*"([^"]+)"/g;
+    let match: RegExpExecArray | null;
+    let last: string | undefined;
+    while ((match = re.exec(before)) !== null) {
+        last = match[2];
+    }
+    return last;
+}
+
 export function registerDragonCompletionProvider(): vscode.Disposable {
     const detectKind = (document: vscode.TextDocument): string | undefined => {
         const normalized = document.uri.fsPath.replace(/\\/g, '/');
@@ -284,7 +335,7 @@ export function registerDragonCompletionProvider(): vscode.Disposable {
 
                 if (context.inValue) {
                     if (context.key && ENUM_VALUE_LISTS[context.key]) {
-                        items.push(...enumItemsForKey(context.key));
+                        items.push(...enumItemsForKey(context.key, kind));
                     }
                     applyEnumTextEdits(document, position, items);
                     return items;
@@ -328,6 +379,35 @@ export function registerDragonCompletionProvider(): vscode.Disposable {
                 }
 
                 const word = document.getText(range);
+                if (kind === 'projectile_data' && word === 'target_type') {
+                    const md = new vscode.MarkdownString();
+                    md.appendMarkdown(`**target_type**\n\n弹射物目标类型\n- \`dragonsurvival:area\` 区域目标\n- \`dragonsurvival:point\` 执行者当前位置`);
+                    return new vscode.Hover(md, range);
+                }
+                if (kind === 'projectile_data' && word === 'entity_effect') {
+                    const md = new vscode.MarkdownString();
+                    md.appendMarkdown(`**entity_effect**\n\n弹射物实体效果类型\n- \`dragonsurvival:damage\` 造成伤害\n- \`dragonsurvival:potion\` 药水效果\n- \`dragonsurvival:lightning\` 闪电\n- \`dragonsurvival:particle\` 粒子\n- \`dragonsurvival:run_function\` 运行函数\n- \`dragonsurvival:push\` 推动`);
+                    return new vscode.Hover(md, range);
+                }
+                if (kind === 'projectile_data' && word === 'block_effect') {
+                    const md = new vscode.MarkdownString();
+                    md.appendMarkdown(`**block_effect**\n\n弹射物方块效果类型\n- \`dragonsurvival:particle\` 粒子\n- \`dragonsurvival:run_function\` 运行函数\n- \`dragonsurvival:area_cloud\` 药水云`);
+                    return new vscode.Hover(md, range);
+                }
+                if (kind === 'projectile_data' && word === 'world_effect') {
+                    const md = new vscode.MarkdownString();
+                    md.appendMarkdown(`**world_effect**\n\n弹射物世界效果类型\n- \`dragonsurvival:explosion\` 爆炸\n- \`dragonsurvival:lightning\` 闪电\n- \`dragonsurvival:particle\` 粒子\n- \`dragonsurvival:run_function\` 运行函数`);
+                    return new vscode.Hover(md, range);
+                }
+                const customMap = getCustomFieldInfoMap();
+                const effectType = getNearestCustomDiscriminatorAt(document, position);
+                const customInfo = effectType && customMap[effectType] ? customMap[effectType][word] : undefined;
+                if (customInfo) {
+                    const md = new vscode.MarkdownString();
+                    md.appendMarkdown(`**${word}**\n\n${customInfo}`);
+                    return new vscode.Hover(md, range);
+                }
+
                 const info = MCDOC_FIELD_INFO[word];
                 if (!info) {
                     return undefined;

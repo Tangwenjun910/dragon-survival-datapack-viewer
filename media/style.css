@@ -69,6 +69,21 @@
     min-height: 16px;
 }
 
+.ref-jump-btn {
+    margin-left: 6px;
+    padding: 1px 6px;
+    font-size: 11px;
+    border: 1px solid var(--vscode-button-border, rgba(255,255,255,0.2));
+    background: var(--vscode-button-background, #0e639c);
+    color: var(--vscode-button-foreground, #ffffff);
+    border-radius: 3px;
+    cursor: pointer;
+}
+
+.ref-jump-btn:hover {
+    background: var(--vscode-button-hoverBackground, #1177bb);
+}
+
 [hidden] {
     display: none !important;
 }
@@ -318,6 +333,79 @@ body {
     border: 1px solid rgba(255, 255, 255, 0.25);
 }
 
+.species-colors {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 10px;
+    margin: 6px 0;
+}
+
+.species-color-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.species-color-item .color-hex {
+    font-size: 11px;
+    padding: 2px 6px;
+}
+
+.species-relations {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.species-relation-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 6px;
+}
+
+.species-kind-badge {
+    flex: 0 0 auto;
+    min-width: 34px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 600;
+    text-align: center;
+    color: #fff;
+}
+
+.species-kind-badge.ability {
+    background: #3a7ca5;
+}
+
+.species-kind-badge.penalty {
+    background: #a54a3a;
+}
+
+.species-names {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 6px;
+    align-items: center;
+    min-width: 0;
+}
+
+.species-names .chip {
+    white-space: normal;
+    word-break: break-all;
+}
+
+.muted-chip {
+    opacity: 0.7;
+}
+
+.species-chips {
+    display: contents;
+}
+
+
+
 .flow {
     display: flex;
     flex-wrap: wrap;
@@ -381,6 +469,8 @@ body {
     font-size: 12px;
     min-width: 0;
 }
+
+
 
 .form-value {
     background: var(--vscode-input-background, #3c3c3c);
@@ -876,6 +966,35 @@ pre.raw {
     font-size: 16px;
     cursor: pointer;
 }
+
+.editor-related {
+    max-height: 120px;
+    overflow: auto;
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--vscode-editor-background, #1e1e1e);
+    font-size: 12px;
+}
+
+.editor-related .section-title {
+    margin: 2px 0 4px;
+}
+
+.editor-related table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 11px;
+}
+
+.editor-related th,
+.editor-related td {
+    padding: 2px 6px;
+    border: 1px solid var(--border);
+    text-align: left;
+    vertical-align: top;
+    word-break: break-all;
+}
+
 
 #editorText {
     width: 100%;

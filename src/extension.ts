@@ -13,6 +13,7 @@ import { registerDragonDiagnostics } from './diagnostics';
 let provider: DragonDataProvider | undefined;
 let manualPath: string | undefined;
 let currentModel: DSModel | undefined;
+let customEffectsRefreshTimer: NodeJS.Timeout | undefined;
 
 export async function activate(context: vscode.ExtensionContext): Promise<void> {
     provider = new DragonDataProvider(context.extensionUri, {
@@ -22,7 +23,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
         onOpenFile: (filePath) => openFile(filePath),
         onAddFile: (kind, namespace) => addFile(kind as RegistryKind, namespace),
         onDeleteFile: (filePath) => deleteFile(filePath),
-        onAddCustomEffect: (effect) => addCustomEffect(effect)
+        onAddCustomEffect: (effect) => addCustomEffect(effect),
+        onOpenCustomEffectsFile: () => openCustomEffectsFile()
     });
 
     context.subscriptions.push(
@@ -64,8 +66,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 
     context.subscriptions.push(
         vscode.workspace.onDidSaveTextDocument((document) => {
-            if (isDragonSurvivalDataFile(document.uri.fsPath)) {
+            if (isDragonSurvivalDataFile(document.uri.fsPath) || isCustomEffectsFile(document.uri.fsPath)) {
                 void refresh();
+            }
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeTextDocument((event) => {
+            if (isCustomEffectsFile(event.document.uri.fsPath)) {
+                if (customEffectsRefreshTimer) {
+                    clearTimeout(customEffectsRefreshTimer);
+                }
+                customEffectsRefreshTimer = setTimeout(() => {
+                    customEffectsRefreshTimer = undefined;
+                    void refresh();
+                }, 500);
             }
         })
     );
@@ -95,14 +111,20 @@ function getSettings(): ViewerSettings {
         rememberScrollPosition: config.get<boolean>('rememberScrollPosition', true),
         showResourcePreviews: config.get<boolean>('showResourcePreviews', true),
         showReferences: config.get<boolean>('showReferences', true),
+        abilitySortOrder: config.get<'alphabetical' | 'type'>('abilitySortOrder', 'alphabetical'),
         customEffectTypes: config.get<string[]>('customEffectTypes', []),
-        customEffects: config.get<Array<{ type: string; fields?: string[]; required?: string[] }>>('customEffects', [])
+        customEffects: config.get<Array<{ type?: string; target?: string; struct?: string; path?: (string | number)[]; key?: string; value?: string; fields?: string[]; required?: string[]; fieldInfo?: Record<string, string>; fieldNames?: Record<string, string> }>>('customEffects', [])
     };
 }
 
 function isDragonSurvivalDataFile(filePath: string): boolean {
     const normalized = filePath.replace(/\\/g, '/').toLowerCase();
     return normalized.includes('/dragonsurvival/') && normalized.endsWith('.json');
+}
+
+function isCustomEffectsFile(filePath: string): boolean {
+    const normalized = filePath.replace(/\\/g, '/').toLowerCase();
+    return normalized.endsWith('.vscode/dragon-survival-custom-effects.json');
 }
 
 async function refresh(): Promise<void> {
@@ -153,6 +175,8 @@ async function refresh(): Promise<void> {
 
     model.assets = assets;
     model.settings = getSettings();
+    const projectCustomEffects = await loadProjectCustomEffects();
+    model.settings.customEffects = [...(model.settings.customEffects || []), ...projectCustomEffects];
     model.localizedNames = localizedNames;
     currentModel = model;
     provider?.setModel(model);
@@ -221,16 +245,14 @@ async function collectLocalizedNames(): Promise<Record<string, string>> {
         }
     }
 
-    const preferred = ['zh_cn', 'en_us'];
-    langFiles.sort((a, b) => {
-        const an = path.basename(a).replace(/\.json$/i, '').toLowerCase();
-        const bn = path.basename(b).replace(/\.json$/i, '').toLowerCase();
-        const ai = preferred.indexOf(an);
-        const bi = preferred.indexOf(bn);
-        return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi);
-    });
+    const langBase = (file: string) => path.basename(file).replace(/\.json$/i, '').toLowerCase();
+    const zhCnFiles = langFiles.filter(f => langBase(f) === 'zh_cn');
+    const enUsFiles = langFiles.filter(f => langBase(f) === 'en_us');
+    // Prefer simplified Chinese (zh_cn); fall back to English. Avoid loading zh_tw/zh_hk
+    // which caused traditional Chinese names to override the simplified ones.
+    const selectedLangFiles = zhCnFiles.length > 0 ? zhCnFiles : enUsFiles.length > 0 ? enUsFiles : langFiles;
 
-    for (const file of langFiles) {
+    for (const file of selectedLangFiles) {
         try {
             const text = await fsp.readFile(file, 'utf-8');
             const data = parseJsonc<Record<string, string>>(text);
@@ -263,14 +285,122 @@ async function selectDatapack(context: vscode.ExtensionContext): Promise<void> {
     await refresh();
 }
 
-async function addCustomEffect(effect: { effectType: string; fields: string[]; required?: string[] }): Promise<void> {
+interface CustomEffectFileEntry {
+    type?: string;
+    target?: string;
+    struct?: string;
+    path?: (string | number)[];
+    key?: string;
+    value?: string;
+    fields?: string[];
+    required?: string[];
+    fieldInfo?: Record<string, string>;
+    fieldNames?: Record<string, string>;
+}
+
+function getProjectCustomEffectsFileCandidates(): string[] {
+    const candidates: string[] = [];
+    for (const folder of vscode.workspace.workspaceFolders ?? []) {
+        candidates.push(path.join(folder.uri.fsPath, '.vscode', 'dragon-survival-custom-effects.json'));
+    }
+    if (manualPath) {
+        candidates.push(path.join(manualPath, '.vscode', 'dragon-survival-custom-effects.json'));
+    }
+    return [...new Set(candidates)];
+}
+
+function getProjectCustomEffectsFilePath(): string | undefined {
+    // Use the first candidate (workspace folder first, then manual path) as the
+    // stable target for open/save actions.
+    return getProjectCustomEffectsFileCandidates()[0];
+}
+
+async function readProjectCustomEffectsFile(): Promise<CustomEffectFileEntry[]> {
+    const result: CustomEffectFileEntry[] = [];
+    for (const filePath of getProjectCustomEffectsFileCandidates()) {
+        try {
+            const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
+            const parsed = JSON.parse(Buffer.from(bytes).toString('utf-8'));
+            if (Array.isArray(parsed)) result.push(...parsed as CustomEffectFileEntry[]);
+        } catch {
+            // File may not exist.
+        }
+    }
+    return result;
+}
+
+async function writeProjectCustomEffectsFile(entries: CustomEffectFileEntry[]): Promise<void> {
+    const filePath = getProjectCustomEffectsFilePath();
+    if (!filePath) {
+        throw new Error('当前没有打开工作区或手动选择的数据包目录，无法保存项目级自定义效果文件');
+    }
+    const dir = path.dirname(filePath);
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(dir));
+    await vscode.workspace.fs.writeFile(
+        vscode.Uri.file(filePath),
+        Buffer.from(JSON.stringify(entries, null, 2), 'utf-8')
+    );
+}
+
+async function openCustomEffectsFile(): Promise<void> {
+    const filePath = getProjectCustomEffectsFilePath();
+    if (!filePath) {
+        vscode.window.showErrorMessage('请先打开一个工作区或手动选择数据包目录，才能使用项目级自定义效果文件');
+        return;
+    }
+    const dir = path.dirname(filePath);
+    await vscode.workspace.fs.createDirectory(vscode.Uri.file(dir));
+    try {
+        await vscode.workspace.fs.stat(vscode.Uri.file(filePath));
+    } catch {
+        await vscode.workspace.fs.writeFile(
+            vscode.Uri.file(filePath),
+            Buffer.from('[]\n', 'utf-8')
+        );
+    }
+    await vscode.commands.executeCommand('vscode.open', vscode.Uri.file(filePath), { preview: true });
+}
+
+async function loadProjectCustomEffects(): Promise<CustomEffectFileEntry[]> {
+    const files: CustomEffectFileEntry[] = [];
+    for (const filePath of getProjectCustomEffectsFileCandidates()) {
+        try {
+            const bytes = await vscode.workspace.fs.readFile(vscode.Uri.file(filePath));
+            const parsed = JSON.parse(Buffer.from(bytes).toString('utf-8'));
+            if (Array.isArray(parsed)) files.push(...parsed as CustomEffectFileEntry[]);
+        } catch {
+            // File may not exist yet.
+        }
+    }
+    return files;
+}
+
+async function addCustomEffect(effect: { effectType: string; fields: string[]; required?: string[]; fieldInfo?: Record<string, string> }): Promise<void> {
+    const projectFile = getProjectCustomEffectsFilePath();
+    if (projectFile) {
+        const current = await readProjectCustomEffectsFile();
+        const next = current.filter(def => (def.type ?? def.value) !== effect.effectType);
+        next.push({
+            type: effect.effectType,
+            fields: effect.fields || [],
+            required: effect.required || [],
+            fieldInfo: effect.fieldInfo
+        });
+        await writeProjectCustomEffectsFile(next);
+        vscode.window.showInformationMessage(`已添加自定义效果: ${effect.effectType}`);
+        await refresh();
+        return;
+    }
+
+    // Fallback to global settings when no workspace is open.
     const config = vscode.workspace.getConfiguration('dragonSurvivalDatapack');
-    const current = config.get<Array<{ type: string; fields?: string[]; required?: string[] }>>('customEffects', []);
-    const next = current.filter(def => def.type !== effect.effectType);
+    const current = config.get<CustomEffectFileEntry[]>('customEffects', []);
+    const next = current.filter(def => (def.type ?? def.value) !== effect.effectType);
     next.push({
         type: effect.effectType,
         fields: effect.fields || [],
-        required: effect.required || []
+        required: effect.required || [],
+        fieldInfo: effect.fieldInfo
     });
     await config.update('customEffects', next, vscode.ConfigurationTarget.Global);
     vscode.window.showInformationMessage(`已添加自定义效果: ${effect.effectType}`);

@@ -16,6 +16,7 @@ export interface DragonDataMessageHandlers {
     onAddFile(kind: string, namespace: string): Promise<void>;
     onDeleteFile(filePath: string): Promise<void>;
     onAddCustomEffect(effect: CustomEffectPayload): Promise<void>;
+    onOpenCustomEffectsFile(): Promise<void>;
 }
 
 export class DragonDataProvider implements vscode.WebviewViewProvider {
@@ -87,6 +88,9 @@ export class DragonDataProvider implements vscode.WebviewViewProvider {
                 }
                 break;
             }
+            case 'openCustomEffectsFile':
+                await this._handlers.onOpenCustomEffectsFile();
+                break;
             case 'select':
                 await this._handlers.onSelect();
                 break;
@@ -185,6 +189,7 @@ export class DragonDataProvider implements vscode.WebviewViewProvider {
                 <span id="editorTitle">编辑 JSON</span>
                 <button id="editorClose" title="关闭">✕</button>
             </div>
+            <div id="editorRelated" class="editor-related"></div>
             <textarea id="editorText" spellcheck="false"></textarea>
             <div id="completionPanel" class="completion-panel" hidden></div>
             <div class="editor-actions">

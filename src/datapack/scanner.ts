@@ -360,7 +360,7 @@ async function collectAssetFiles(
                 namespace,
                 category,
                 filePath: full,
-                relativePath: path.relative(rootCategory, full)
+                relativePath: path.relative(rootCategory, full).replace(/\\/g, '/')
             });
         }
     }

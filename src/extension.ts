@@ -59,6 +59,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
     context.subscriptions.push(registerDragonDiagnostics());
 
     context.subscriptions.push(
+        vscode.languages.registerColorProvider(
+            [{ language: 'json' }, { language: 'jsonc' }],
+            dragonColorProvider
+        )
+    );
+
+
+    context.subscriptions.push(
         vscode.workspace.onDidChangeWorkspaceFolders(() => {
             void refresh();
         })
@@ -101,6 +109,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
 export function deactivate(): void {
     // Nothing to clean up.
 }
+
+const dragonColorProvider: vscode.DocumentColorProvider = {
+    provideDocumentColors(document: vscode.TextDocument, _token: vscode.CancellationToken): vscode.ColorInformation[] {
+        const text = document.getText();
+        const regex = /"#([0-9a-fA-F]{6})"/g;
+        const result: vscode.ColorInformation[] = [];
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(text)) !== null) {
+            const valueStart = match.index + 1;
+            const valueEnd = valueStart + match[1].length + 1;
+            const color = hexToColor(match[1]);
+            if (color) {
+                result.push(new vscode.ColorInformation(
+                    new vscode.Range(document.positionAt(valueStart), document.positionAt(valueEnd)),
+                    color
+                ));
+            }
+        }
+        return result;
+    },
+    provideColorPresentations(color: vscode.Color, _context: { document: vscode.TextDocument; range: vscode.Range }, _token: vscode.CancellationToken): vscode.ColorPresentation[] {
+        const toHex = (value: number): string => Math.round(value * 255).toString(16).padStart(2, '0');
+        return [new vscode.ColorPresentation(
+            `#${toHex(color.red)}${toHex(color.green)}${toHex(color.blue)}`
+        )];
+    }
+};
+
+function hexToColor(hex: string): vscode.Color | undefined {
+    if (!/^[0-9a-fA-F]{6}$/.test(hex)) return undefined;
+    const value = parseInt(hex, 16);
+    return new vscode.Color(
+        ((value >> 16) & 0xff) / 255,
+        ((value >> 8) & 0xff) / 255,
+        (value & 0xff) / 255,
+        1
+    );
+}
+
 
 function getSettings(): ViewerSettings {
     const config = vscode.workspace.getConfiguration('dragonSurvivalDatapack');

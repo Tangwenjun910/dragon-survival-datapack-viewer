@@ -1117,23 +1117,22 @@
             <div class="card species-card" style="--species-color:${esc(primary)}" data-kind="${entry.kind}" data-namespace="${entry.namespace}" data-id="${entry.namespace}:${entry.id}">
                 <div class="card-header">
                     <span class="card-title">${entryTitle(entry)}</span>
-                    <span class="badge">${abilities.length} 能力 · ${penalties.length} 惩罚</span>
                     <button class="delete-file-btn" data-file-path="${encodeURIComponent(entry.filePath)}" title="删除文件">🗑</button>
                 </div>
                 <div class="card-subtitle">${esc(entry.filePath)}</div>
                 <div class="species-colors">
-                    <div class="species-color-item"><span class="color-swatch" style="background:${esc(primary)}" title="主色 ${esc(primary)}"></span><span class="color-hex">主 ${esc(primary)}</span></div>
-                    <div class="species-color-item"><span class="color-swatch" style="background:${esc(secondary)}" title="辅色 ${esc(secondary)}"></span><span class="color-hex">辅 ${esc(secondary)}</span></div>
+                    <div class="species-color-item"><span class="color-swatch" style="background:${esc(primary)}" title="主色 ${esc(primary)}"></span><span class="color-hex">${esc(primary)}</span></div>
+                    <div class="species-color-item"><span class="color-swatch" style="background:${esc(secondary)}" title="辅色 ${esc(secondary)}"></span><span class="color-hex">${esc(secondary)}</span></div>
                 </div>
                 ${flowHtml}
-                <div class="species-relations">
-                    <div class="species-relation-row">
-                        <span class="species-kind-badge ability">能力</span>
-                        <span class="species-names">${abilityChips || '<span class="chip muted-chip">无</span>'}</span>
+                <div class="species-overview">
+                    <div class="species-kind-column">
+                        <span class="species-kind-badge ability">${tr('能力', 'Ability')} ${abilities.length}</span>
+                        <span class="species-kind-badge penalty">${tr('惩罚', 'Penalty')} ${penalties.length}</span>
                     </div>
-                    <div class="species-relation-row">
-                        <span class="species-kind-badge penalty">惩罚</span>
-                        <span class="species-names">${penaltyChips || '<span class="chip muted-chip">无</span>'}</span>
+                    <div class="species-detail-column">
+                        <div class="species-name-row">${abilityChips || '<span class="chip muted-chip">无</span>'}</div>
+                        <div class="species-name-row">${penaltyChips || '<span class="chip muted-chip">无</span>'}</div>
                     </div>
                 </div>
             </div>`;
@@ -1279,6 +1278,9 @@
         const abilities = sortAbilityIds(meta.abilities || []);
         const penalties = meta.penalties || [];
         const colors = d.misc_resources || {};
+        const miscFields = Object.assign({}, d.misc_resources || {});
+        delete miscFields.primary_color;
+        delete miscFields.secondary_color;
         const primaryColor = colors.primary_color || '#FFFFFF';
         const secondaryColor = colors.secondary_color || '#FFFFFF';
 
@@ -1306,7 +1308,7 @@
             <div class="ability-editor">${renderStructuredForm({ abilities: d.abilities, penalties: d.penalties }, 0, [])}</div>
 
             <div class="section-title">🎨 ${tr('misc_resources 全部字段', 'All misc_resources Fields')}</div>
-            <div class="ability-editor">${renderStructuredForm(d.misc_resources || {}, 0, ['misc_resources'])}</div>
+            <div class="ability-editor">${renderStructuredForm(miscFields, 0, ['misc_resources'])}</div>
 
             <div class="section-title">${tr('阶段链', 'Stage Chain')}</div>
             <div class="flow">
@@ -2096,8 +2098,6 @@
         growth_right_arrow: { hover_icon: '', icon: '' },
         growth_crystal: { empty: '', full: '' },
         food_tooltip: { font: '', nutrition_icon: '\\uEA01', saturation_icon: '\\uEA04' },
-        primary_color: '#FFFFFF',
-        secondary_color: '#FFFFFF',
         claw_texture_slot: 'PICKAXE'
     };
 

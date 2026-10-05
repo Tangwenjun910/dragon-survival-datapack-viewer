@@ -5,6 +5,8 @@ const PROJECT_ROOT = path.resolve(__dirname, '..');
 const MCDOC_ROOT = path.join(PROJECT_ROOT, 'mcdoc-src', 'mcdoc');
 const OUT = path.join(PROJECT_ROOT, 'src', 'mcdocSchema.ts');
 const OUT_JS = path.join(PROJECT_ROOT, 'media', 'mcdocSchema.js');
+// Version of dragonsurvival-mcdoc-completion-zh that mcdoc-src was synced from.
+const UPSTREAM_VERSION = '2.1.0';
 
 const KIND_TO_STRUCT = {
     dragon_ability: 'DragonAbility',
@@ -330,6 +332,16 @@ function parseDispatchTarget(text, start, ast) {
         return { targetName: sm[1], end: parsed.end };
     }
 
+    // Union target: a value may match any of several structs, e.g.
+    // `dispatch minecraft:resource[dragonsurvival:dragon_body] to ( DragonBody | DragonBodyWithoutModel | )`
+    if (text[i] === '(') {
+        const group = readBalanced(text, i, '(', ')');
+        const names = splitTopLevel(group.inner, '|')
+            .map(name => name.trim())
+            .filter(name => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name));
+        return { targetName: names[0] || '', targetNames: names, end: group.end };
+    }
+
     // Read a leading identifier (e.g. Conditions, ComplexRemovalDataMap, DataMap).
     const id = readIdentifier(text, i);
     if (!id.value) return { targetName: '', end: i };
@@ -377,6 +389,14 @@ function parseDispatch(text, start, ast) {
     const valueMap = ast.dispatches.get(registry);
     for (const value of values) {
         if (!valueMap.has(value)) valueMap.set(value, target.targetName);
+    }
+    // Remember value -> struct list for targets that are a union of structs.
+    if (target.targetNames && target.targetNames.length > 1) {
+        if (!ast.dispatchUnions.has(registry)) ast.dispatchUnions.set(registry, new Map());
+        const unionMap = ast.dispatchUnions.get(registry);
+        for (const value of values) {
+            if (!unionMap.has(value)) unionMap.set(value, target.targetNames);
+        }
     }
     return { end: target.end };
 }
@@ -439,7 +459,9 @@ function parseEnum(text, start, ast) {
 
 function parseFieldInfo(text) {
     const map = {};
-    const lines = text.split('\n');
+    // Split on either line ending: `.` never matches `\r`, so a `CRLF` checkout
+    // would otherwise silently drop every field description.
+    const lines = text.split(/\r?\n/);
     const fieldRe = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*(\?)?\s*:/;
     for (let i = 0; i < lines.length; i++) {
         const match = lines[i].match(fieldRe);
@@ -467,6 +489,7 @@ function parseFile(file, text) {
         structs: new Map(),
         enums: new Map(),
         dispatches: new Map(),
+        dispatchUnions: new Map(),
         typeAliases: new Map(),
         fieldInfo: parseFieldInfo(text)
     };
@@ -598,6 +621,22 @@ for (const ast of fileAsts) {
     }
 }
 
+// Union dispatch targets: the value may match any of several structs, and each
+// member needs to know the whole union (e.g. the `dragon_body` root, which
+// accepts either a full body or the model-less short form).
+const unionMembersByStruct = new Map();
+for (const ast of fileAsts) {
+    for (const [, valueMap] of ast.dispatchUnions) {
+        for (const [, rawNames] of valueMap) {
+            const names = rawNames
+                .map(name => resolveStructRef(ast.file, name) || name)
+                .filter(name => !!structs[name]);
+            if (names.length < 2) continue;
+            for (const name of names) unionMembersByStruct.set(name, names);
+        }
+    }
+}
+
 const childStructs = {};
 for (const ast of fileAsts) {
     for (const [name, def] of ast.structs) {
@@ -634,6 +673,13 @@ for (const [kind, structName] of Object.entries(KIND_TO_STRUCT)) {
     kindToStruct[kind] = ast ? ns(structName, ast.stem) : structName;
 }
 
+// Kinds whose document root accepts several structs (union dispatch target).
+const kindToUnion = {};
+for (const [kind, structName] of Object.entries(kindToStruct)) {
+    const members = unionMembersByStruct.get(structName);
+    if (members && members.length > 1) kindToUnion[kind] = members;
+}
+
 const structOwners = {};
 for (const [globalName, def] of Object.entries(structs)) {
     structOwners[globalName] = def.ownerStem;
@@ -657,7 +703,7 @@ function jsonLines(obj, indent = '    ') {
 }
 
 const lines = [];
-lines.push('// Auto-generated from dragonsurvival-mcdoc-completion-zh-2.0.4');
+lines.push(`// Auto-generated from dragonsurvival-mcdoc-completion-zh-${UPSTREAM_VERSION}`);
 lines.push('export interface McdocStruct {');
 lines.push('    required: string[];');
 lines.push('    optional: string[];');
@@ -700,11 +746,14 @@ lines.push('};');
 lines.push('');
 lines.push('export const KIND_TO_STRUCT: Record<string, string> = ' + JSON.stringify(kindToStruct) + ';');
 lines.push('');
+lines.push('// Kinds whose document root is a union of structs (e.g. dragon_body).');
+lines.push('export const KIND_TO_UNION: Record<string, string[]> = ' + JSON.stringify(kindToUnion) + ';');
+lines.push('');
 
 fs.writeFileSync(OUT, lines.join('\n'), 'utf8');
 
 const jsLines = [];
-jsLines.push('// Auto-generated from dragonsurvival-mcdoc-completion-zh-2.0.4');
+jsLines.push(`// Auto-generated from dragonsurvival-mcdoc-completion-zh-${UPSTREAM_VERSION}`);
 jsLines.push('(function () {');
 jsLines.push('    window.MCDOC_SCHEMA = {');
 jsLines.push('        structs: ' + JSON.stringify(structs) + ',');
@@ -714,7 +763,8 @@ jsLines.push('        fieldInfo: ' + JSON.stringify(info) + ',');
 jsLines.push('        dispatch: ' + JSON.stringify(dispatches) + ',');
 jsLines.push('        structOwners: ' + JSON.stringify(structOwners) + ',');
 jsLines.push('        typeAliases: ' + JSON.stringify(typeAliases) + ',');
-jsLines.push('        kindToStruct: ' + JSON.stringify(kindToStruct));
+jsLines.push('        kindToStruct: ' + JSON.stringify(kindToStruct) + ',');
+jsLines.push('        kindToUnion: ' + JSON.stringify(kindToUnion));
 jsLines.push('    };');
 jsLines.push('})();');
 fs.writeFileSync(OUT_JS, jsLines.join('\n'), 'utf8');
@@ -738,5 +788,6 @@ console.log('childStructs:', Object.keys(childStructs).length);
 console.log('enums:', Object.keys(enums).length);
 console.log('fieldInfo:', Object.keys(info).length);
 console.log('dispatch registries:', Object.keys(dispatches).length);
+console.log('union root kinds:', JSON.stringify(kindToUnion));
 console.log('typeAliases:', Object.keys(typeAliases).length);
 console.log('->', OUT_JS);

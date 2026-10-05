@@ -32,6 +32,20 @@
     function mcdocStructForKind(kind) {
         if (!mcdocSchema || !kind) return null;
         const structName = mcdocSchema.kindToStruct && mcdocSchema.kindToStruct[kind];
+        const union = mcdocSchema.kindToUnion && mcdocSchema.kindToUnion[kind];
+        if (union && union.length > 1) {
+            // Several root structs are accepted (e.g. dragon_body with and without
+            // a custom model): offer every member's fields and demand nothing, so
+            // neither form is reported as incomplete.
+            const optional = new Set();
+            for (const member of union) {
+                const struct = mcdocSchema.structs && mcdocSchema.structs[member];
+                if (!struct) continue;
+                for (const field of (struct.required || [])) optional.add(field);
+                for (const field of (struct.optional || [])) optional.add(field);
+            }
+            return { required: [], optional: [...optional] };
+        }
         if (!structName) return null;
         return mcdocSchema.structs && mcdocSchema.structs[structName] || null;
     }
@@ -50,108 +64,278 @@
         };
     }
 
-    function resolveDispatchStruct(baseName, registry, value) {
-        const dispatch = mcdocSchema.dispatch || {};
-        const structs = mcdocSchema.structs || {};
-        const name = value ? dispatch[registry]?.[value] : undefined;
-        if (name) {
-            let merged = mergeMcdocStructs(structs[baseName], structs[name]);
-            if (registry.includes('effect')) merged = augmentCustomEffectStruct(value, merged);
-            return merged;
+    // Dynamic `...dispatch[[key]]` spreads per mcdoc struct. The generated schema
+    // only carries the static fields of a struct body, so the fields contributed
+    // by its spreads are resolved here. Keep in sync with mcdoc-src;
+    // test/schema-bindings.js compares this table against the mcdoc sources.
+    const MCDOC_DISPATCH_BINDINGS = {
+        Activation__data_dragonsurvival_dragon_ability: [{ key: 'activation_type', registry: 'dragonsurvival:activation' }],
+        Upgrade__data_dragonsurvival_dragon_ability: [{ key: 'upgrade_type', registry: 'dragonsurvival:upgrade_type' }],
+        Targeting__data_dragonsurvival_dragon_ability: [{ key: 'target_type', registry: 'dragonsurvival:ability_targeting' }],
+        EntityEffect__data_dragonsurvival_dragon_ability: [{ key: 'effect_type', registry: 'dragonsurvival:ability_entity_effect' }],
+        BlockEffect__data_dragonsurvival_dragon_ability: [{ key: 'effect_type', registry: 'dragonsurvival:ability_block_effect' }],
+        ActivationTrigger__data_dragonsurvival_dragon_ability: [{ key: 'trigger_type', registry: 'dragonsurvival:activation_trigger' }],
+        PenaltyEffect__data_dragonsurvival_dragon_penalty: [{ key: 'penalty_type', registry: 'dragonsurvival:penalty_effect' }],
+        PenaltyTrigger__data_dragonsurvival_dragon_penalty: [{ key: 'penalty_trigger', registry: 'dragonsurvival:penalty_trigger' }],
+        ProjectileTargeting__data_dragonsurvival_projectile_data: [{ key: 'target_type', registry: 'dragonsurvival:projectile_targeting' }],
+        // The three projectile effect containers spread all three registries, so
+        // whichever discriminator the object carries picks the variant.
+        ProjectileEntityEffect__data_dragonsurvival_projectile_data: [
+            { key: 'entity_effect', registry: 'dragonsurvival:projectile_entity_effect' },
+            { key: 'block_effect', registry: 'dragonsurvival:projectile_block_effect' },
+            { key: 'world_effect', registry: 'dragonsurvival:projectile_world_effect' }
+        ],
+        ProjectileBlockEffect__data_dragonsurvival_projectile_data: [
+            { key: 'entity_effect', registry: 'dragonsurvival:projectile_entity_effect' },
+            { key: 'block_effect', registry: 'dragonsurvival:projectile_block_effect' },
+            { key: 'world_effect', registry: 'dragonsurvival:projectile_world_effect' }
+        ],
+        ProjectileWorldEffect__data_dragonsurvival_projectile_data: [
+            { key: 'entity_effect', registry: 'dragonsurvival:projectile_entity_effect' },
+            { key: 'block_effect', registry: 'dragonsurvival:projectile_block_effect' },
+            { key: 'world_effect', registry: 'dragonsurvival:projectile_world_effect' }
+        ],
+        // Selected by an ancestor node, not by a field of the object itself.
+        Action__data_dragonsurvival_dragon_ability: [{ registry: 'dragonsurvival:trigger_point' }],
+        Sound__data_dragonsurvival_dragon_ability: [{ registry: 'dragonsurvival:sound' }],
+        Animations__data_dragonsurvival_dragon_ability: [{ registry: 'dragonsurvival:animatioin' }]
+    };
+
+    const COMBINED_MCDOC_TARGETING = 'BlockTargeting__data_dragonsurvival_dragon_ability+EntityTargeting__data_dragonsurvival_dragon_ability';
+
+    function mcdocVariantsOf(registry) {
+        const dispatch = (mcdocSchema && mcdocSchema.dispatch) || {};
+        return Object.values(dispatch[registry] || {});
+    }
+
+    function mcdocStructInfo(name) {
+        const struct = (mcdocSchema && mcdocSchema.structs && mcdocSchema.structs[name]) || null;
+        if (!struct) return null;
+        return { required: struct.required || [], optional: struct.optional || [] };
+    }
+
+    /**
+     * Structs this schema subset cannot describe: their content comes from a
+     * spread of a registry the mcdoc does not declare, so checking keys against
+     * the generated field list would report every key as unknown.
+     */
+    function isPermissiveMcdocStruct(name) {
+        if (!name) return false;
+        return name.startsWith('SummonEntityEffect_NBT__');
+    }
+
+    function augmentMcdocEffectStruct(bindings, obj, struct) {
+        let result = struct;
+        for (const binding of bindings) {
+            if (!binding.key || !binding.registry.includes('effect')) continue;
+            const value = typeof obj[binding.key] === 'string' ? obj[binding.key] : null;
+            if (value) result = augmentCustomEffectStruct(value, result);
         }
-        if (baseName === 'ProjectileTargeting__data_dragonsurvival_projectile_data' && value === 'dragonsurvival:point') {
-            // `dragonsurvival:point` is valid but has no extra variant fields;
-            // it must not inherit radius/particle_trail from AreaTarget.
-            return structs[baseName] || { required: [], optional: [] };
-        }
-        // Discriminator missing/unknown: allow all variant fields, but only
-        // report the base required fields as missing (e.g. target_type).
-        const allVariants = Object.values(dispatch[registry] || {})
-            .map(n => structs[n])
-            .filter(Boolean);
-        const baseStruct = structs[baseName] || { required: [], optional: [] };
-        const allFields = new Set([...(baseStruct.required || []), ...(baseStruct.optional || [])]);
-        for (const v of allVariants) {
-            for (const f of (v.required || [])) allFields.add(f);
-            for (const f of (v.optional || [])) allFields.add(f);
-        }
-        const required = [...(baseStruct.required || [])];
-        const optional = [...allFields].filter(f => !required.includes(f));
-        let result = { required, optional };
-        if (registry.includes('effect')) result = augmentCustomEffectStruct(value, result);
         return result;
     }
 
-    function isDispatchContainerPath(path, key) {
-        if (path.length === 0) return false;
-        const last = path[path.length - 1];
-        if (last === key) return true;
-        return typeof last === 'number' && path[path.length - 2] === key;
+    /**
+     * Struct of one object node: the struct body plus every field contributed by
+     * the spreads the object's own discriminators select. When no discriminator is
+     * present at all the variant cannot be determined, so every variant stays
+     * allowed while the container's required discriminator is still reported.
+     */
+    function resolveMcdocObject(name, obj) {
+        const base = mcdocStructInfo(name);
+        if (!base) return null;
+        const bindings = MCDOC_DISPATCH_BINDINGS[name];
+        if (!bindings || bindings.length === 0) {
+            return { baseName: name, variantNames: [], struct: mergeMcdocStructs(base) };
+        }
+
+        const selected = new Set();
+        let undeterminedKey = false;
+        for (const binding of bindings) {
+            if (!binding.key) {
+                // The variant is chosen by an ancestor node, so all of them apply.
+                for (const variant of mcdocVariantsOf(binding.registry)) selected.add(variant);
+                continue;
+            }
+            const value = typeof obj[binding.key] === 'string' ? obj[binding.key] : null;
+            const variant = value ? ((mcdocSchema.dispatch || {})[binding.registry] || {})[value] : null;
+            if (variant && mcdocStructInfo(variant)) {
+                selected.add(variant);
+            } else if (value !== null) {
+                // Custom (datapack-provided) value: keep that registry's variants.
+                for (const variantName of mcdocVariantsOf(binding.registry)) selected.add(variantName);
+            } else {
+                undeterminedKey = true;
+            }
+        }
+
+        let variantNames = [...selected].filter(candidate => !!mcdocStructInfo(candidate));
+        // Every discriminator of the struct body is a legal key, whether or not
+        // this object uses it (the mcdoc declares them as independent spreads).
+        const discriminatorKeys = {
+            required: [],
+            optional: bindings.map(binding => binding.key).filter(Boolean)
+        };
+        if (undeterminedKey && variantNames.length === 0) {
+            const all = new Set();
+            for (const binding of bindings) {
+                for (const variant of mcdocVariantsOf(binding.registry)) {
+                    if (mcdocStructInfo(variant)) all.add(variant);
+                }
+            }
+            variantNames = [...all];
+            const struct = augmentMcdocEffectStruct(
+                bindings,
+                obj,
+                mergeMcdocStructs(base, discriminatorKeys, ...variantNames.map(mcdocStructInfo))
+            );
+            return { baseName: name, variantNames, struct, missingRequired: base.required };
+        }
+
+        const struct = augmentMcdocEffectStruct(
+            bindings,
+            obj,
+            mergeMcdocStructs(base, discriminatorKeys, ...variantNames.map(mcdocStructInfo))
+        );
+        return { baseName: name, variantNames, struct };
     }
 
-    function resolveMcdocStruct(path, obj) {
-        if (!mcdocSchema || !obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
-        const effectType = typeof obj.effect_type === 'string' ? obj.effect_type : null;
-        const activationType = typeof obj.activation_type === 'string' ? obj.activation_type : null;
-        const upgradeType = typeof obj.upgrade_type === 'string' ? obj.upgrade_type : null;
-        const targetType = typeof obj.target_type === 'string' ? obj.target_type : null;
-        const penaltyType = typeof obj.penalty_type === 'string' ? obj.penalty_type : null;
-        const penaltyTrigger = typeof obj.penalty_trigger === 'string' ? obj.penalty_trigger : null;
-        const triggerType = typeof obj.trigger_type === 'string' ? obj.trigger_type : null;
+    /**
+     * Struct for a value that may fit several candidate structs (a union in the
+     * mcdoc, e.g. `BlockTargeting | EntityTargeting`). Fields are checked against
+     * every candidate so a field of the wrong branch is still reported.
+     */
+    function resolveMcdocUnion(candidates, obj) {
+        const resolved = candidates.map(name => resolveMcdocObject(name, obj)).filter(Boolean);
+        if (resolved.length === 0) return null;
+        const optional = new Set();
+        for (const item of resolved) {
+            for (const field of (item.struct.required || [])) optional.add(field);
+            for (const field of (item.struct.optional || [])) optional.add(field);
+        }
+        return {
+            baseName: resolved[0].baseName,
+            variantNames: [],
+            struct: { required: [], optional: [...optional] }
+        };
+    }
 
-        if (isDispatchContainerPath(path, 'entity_effect')) {
-            return resolveDispatchStruct('EntityEffect__data_dragonsurvival_dragon_ability', 'dragonsurvival:ability_entity_effect', effectType);
-        }
-        if (isDispatchContainerPath(path, 'block_effect')) {
-            return resolveDispatchStruct('BlockEffect__data_dragonsurvival_dragon_ability', 'dragonsurvival:ability_block_effect', effectType);
-        }
-        if (isDispatchContainerPath(path, 'activation')) {
-            return resolveDispatchStruct('Activation__data_dragonsurvival_dragon_ability', 'dragonsurvival:activation', activationType);
-        }
-        if (isDispatchContainerPath(path, 'upgrade')) {
-            return resolveDispatchStruct('Upgrade__data_dragonsurvival_dragon_ability', 'dragonsurvival:upgrade_type', upgradeType);
-        }
-        if (isDispatchContainerPath(path, 'target_selection')) {
-            return resolveDispatchStruct('Targeting__data_dragonsurvival_dragon_ability', 'dragonsurvival:ability_targeting', targetType);
-        }
-        if (isDispatchContainerPath(path, 'effect') && currentDetail && currentDetail.kind === 'dragon_penalty') {
-            return resolveDispatchStruct('PenaltyEffect__data_dragonsurvival_dragon_penalty', 'dragonsurvival:penalty_effect', penaltyType);
-        }
-        if (isDispatchContainerPath(path, 'trigger') && currentDetail) {
-            if (currentDetail.kind === 'dragon_penalty') {
-                return resolveDispatchStruct('PenaltyTrigger__data_dragonsurvival_dragon_penalty', 'dragonsurvival:penalty_trigger', penaltyTrigger);
-            }
-            if (currentDetail.kind === 'dragon_ability') {
-                return resolveDispatchStruct('ActivationTrigger__data_dragonsurvival_dragon_ability', 'dragonsurvival:activation_trigger', triggerType);
+    function mcdocChildCandidates(resolved, field) {
+        if (!resolved) return [];
+        const children = (mcdocSchema && mcdocSchema.childStructs) || {};
+        const names = [];
+        if (resolved.baseName) names.push(resolved.baseName);
+        for (const variantName of (resolved.variantNames || [])) names.push(variantName);
+        const result = new Set();
+        for (const name of names) {
+            const map = children[name];
+            if (map && map[field]) {
+                for (const child of map[field]) result.add(child);
             }
         }
-        if (isDispatchContainerPath(path, 'applied_effects')) {
-            const structs = mcdocSchema.structs || {};
-            const blockTargeting = structs['BlockTargeting__data_dragonsurvival_dragon_ability'];
-            const entityTargeting = structs['EntityTargeting__data_dragonsurvival_dragon_ability'];
-            if ('entity_effect' in obj && 'block_effect' in obj) {
-                return mergeMcdocStructs(blockTargeting, entityTargeting);
-            }
-            if ('entity_effect' in obj) return entityTargeting || null;
-            if ('block_effect' in obj) return blockTargeting || null;
+        return [...result];
+    }
+
+    /** Picks the union member a value belongs to, when its keys identify one. */
+    function inferMcdocChild(candidates, obj) {
+        if (candidates.length === 1) return candidates[0];
+        if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return null;
+
+        const blockTargeting = 'BlockTargeting__data_dragonsurvival_dragon_ability';
+        const entityTargeting = 'EntityTargeting__data_dragonsurvival_dragon_ability';
+        if (candidates.includes(blockTargeting) && candidates.includes(entityTargeting)) {
+            if ('entity_effect' in obj && 'block_effect' in obj) return COMBINED_MCDOC_TARGETING;
+            if ('entity_effect' in obj) return entityTargeting;
+            if ('block_effect' in obj) return blockTargeting;
         }
-        if (currentDetail && currentDetail.kind === 'projectile_data') {
-            // Resolve projectile-specific dispatch objects so the UI can flag
-            // fields that only belong to another target/effect variant.
-            if (typeof obj.target_type === 'string') {
-                return resolveDispatchStruct('ProjectileTargeting__data_dragonsurvival_projectile_data', 'dragonsurvival:projectile_targeting', targetType);
-            }
-            if (typeof obj.entity_effect === 'string') {
-                return resolveDispatchStruct('ProjectileEntityEffect__data_dragonsurvival_projectile_data', 'dragonsurvival:projectile_entity_effect', obj.entity_effect);
-            }
-            if (typeof obj.block_effect === 'string') {
-                return resolveDispatchStruct('ProjectileBlockEffect__data_dragonsurvival_projectile_data', 'dragonsurvival:projectile_block_effect', obj.block_effect);
-            }
-            if (typeof obj.world_effect === 'string') {
-                return resolveDispatchStruct('ProjectileWorldEffect__data_dragonsurvival_projectile_data', 'dragonsurvival:projectile_world_effect', obj.world_effect);
-            }
+
+        const genericArrow = 'GenericArrowData__data_dragonsurvival_projectile_data';
+        const genericBall = 'GenericBallData__data_dragonsurvival_projectile_data';
+        if (candidates.includes(genericArrow) && candidates.includes(genericBall)) {
+            if ('texture' in obj) return genericArrow;
+            if ('resources' in obj || 'behaviour_data' in obj) return genericBall;
+        }
+
+        const compoundAnim = 'CompoundAbilityAnimation__data_dragonsurvival_dragon_ability';
+        const simpleAnim = 'SimpleAbilityAnimation__data_dragonsurvival_dragon_ability';
+        if (candidates.includes(compoundAnim) && candidates.includes(simpleAnim)) {
+            if ('starting_animation_key' in obj) return compoundAnim;
+            if ('animation_key' in obj) return simpleAnim;
+        }
+
+        const levelBasedEntry = 'LevelBasedResourceEntry__data_dragonsurvival_dragon_ability';
+        const resourceLocation = 'ResourceLocation__data_dragonsurvival_projectile_data';
+        if (candidates.includes(levelBasedEntry) && candidates.includes(resourceLocation)) {
+            return levelBasedEntry;
+        }
+
+        const projectileCandidates = [
+            'ProjectileWorldEffect__data_dragonsurvival_projectile_data',
+            'ProjectileBlockEffect__data_dragonsurvival_projectile_data',
+            'ProjectileEntityEffect__data_dragonsurvival_projectile_data'
+        ].filter(candidate => candidates.includes(candidate));
+        if (projectileCandidates.length > 1) {
+            if ('world_effect' in obj) return projectileCandidates[0];
+            if ('block_effect' in obj) return projectileCandidates[1];
+            if ('entity_effect' in obj) return projectileCandidates[2];
         }
         return null;
+    }
+
+    /**
+     * Struct that applies to the object at `path`, replayed from the document
+     * root. Every nesting level is resolved through the schema, so a field is
+     * checked wherever it sits and a field of a sibling branch is reported.
+     */
+    function resolveStructAtPath(kind, rootData, path, obj) {
+        if (!mcdocSchema || !rootData || typeof rootData !== 'object' || Array.isArray(rootData)) return null;
+        const rootUnion = (mcdocSchema.kindToUnion && mcdocSchema.kindToUnion[kind]) || null;
+        const rootStruct = mcdocSchema.kindToStruct && mcdocSchema.kindToStruct[kind];
+        if (!rootStruct && !(rootUnion && rootUnion.length > 0)) return null;
+
+        let node = rootData;
+        let structName = rootUnion && rootUnion.length > 0 ? null : rootStruct;
+        let unionMembers = rootUnion && rootUnion.length > 0 ? rootUnion : null;
+
+        for (const segment of path) {
+            if (!node || typeof node !== 'object') return null;
+            if (typeof segment === 'number') {
+                node = node[segment];
+                continue;
+            }
+            const parentResolved = unionMembers
+                ? resolveMcdocUnion(unionMembers, node)
+                : resolveMcdocObject(structName, node);
+            if (!parentResolved) return null;
+            const candidates = mcdocChildCandidates(parentResolved, segment);
+            if (candidates.length === 0) return null;
+            const child = node[segment];
+            const next = inferMcdocChild(candidates, child);
+            if (next === COMBINED_MCDOC_TARGETING) {
+                unionMembers = [
+                    'BlockTargeting__data_dragonsurvival_dragon_ability',
+                    'EntityTargeting__data_dragonsurvival_dragon_ability'
+                ];
+                structName = null;
+            } else if (next) {
+                structName = next;
+                unionMembers = null;
+            } else {
+                unionMembers = candidates;
+                structName = null;
+            }
+            node = child;
+        }
+
+        if (!node || typeof node !== 'object' || Array.isArray(node)) return null;
+        // Only validate objects that really sit at `path` inside this document;
+        // detached copies rendered by some detail views stay unchecked.
+        if (node !== obj) return null;
+        const resolved = unionMembers ? resolveMcdocUnion(unionMembers, node) : resolveMcdocObject(structName, node);
+        if (!resolved || isPermissiveMcdocStruct(resolved.baseName)) return null;
+        return {
+            required: resolved.missingRequired || resolved.struct.required || [],
+            optional: resolved.struct.optional || []
+        };
     }
 
     function getMissingRequiredFields(entry) {
@@ -556,7 +740,12 @@
             if (autofillBtn) {
                 const path = JSON.parse(decodeURIComponent(autofillBtn.getAttribute('data-autofill-path') || '[]'));
                 const obj = getAtPath((currentDetail && currentDetail.data) || {}, path);
-                let struct = resolveMcdocStruct(path, obj);
+                let struct = resolveStructAtPath(
+                    currentDetail && currentDetail.kind,
+                    currentDetail && currentDetail.data,
+                    path,
+                    obj
+                );
                 if (!struct && path.length === 0 && currentDetail) {
                     struct = mcdocStructForKind(currentDetail.kind);
                 }
@@ -1728,7 +1917,12 @@
                 </div>`;
             }
 
-            const mdocStruct = resolveMcdocStruct(path, value);
+            const mdocStruct = resolveStructAtPath(
+                currentDetail && currentDetail.kind,
+                currentDetail && currentDetail.data,
+                path,
+                value
+            );
             const customContext = getCustomFieldContext(currentDetail && currentDetail.kind, path, value);
             const effectiveStruct = mdocStruct ? applyCustomFieldContext(mdocStruct, customContext) : null;
             const schema = currentDetail && currentDetail.kind === 'dragon_ability'
@@ -1950,7 +2144,8 @@
         'dragonsurvival:dragon_growth': { probability: 1 },
         'dragonsurvival:mana_recovery': { probability: 1 },
         'dragonsurvival:experience': { probability: 1 },
-        'dragonsurvival:cooldown_recovery': { abilities: '', probability: 1, exclude_this: true }
+        'dragonsurvival:cooldown_recovery': { abilities: '', probability: 1, exclude_this: true },
+        'dragonsurvival:climbable': { climbables: [] }
     };
 
     const BLOCK_EFFECT_AUTO_FIELDS = {
@@ -2450,7 +2645,8 @@
             { value: 'dragonsurvival:dragon_growth', label: '龙成长 Dragon Growth' },
             { value: 'dragonsurvival:mana_recovery', label: '法力恢复 Mana Recovery' },
             { value: 'dragonsurvival:experience', label: '经验 Experience' },
-            { value: 'dragonsurvival:cooldown_recovery', label: '冷却恢复 Cooldown Recovery' }
+            { value: 'dragonsurvival:cooldown_recovery', label: '冷却恢复 Cooldown Recovery' },
+            { value: 'dragonsurvival:climbable', label: '可攀爬 Climbable' }
         ],
         targeting_mode: [
             { value: 'all', label: '所有目标 All' },
@@ -2472,6 +2668,16 @@
             { value: 'default', label: '默认 Default' },
             { value: 'charging', label: '蓄力中 Charging' },
             { value: 'channel_completion', label: '引导结束 Channel Completion' }
+        ],
+        trigger_type: [
+            { value: 'dragonsurvival:constant', label: '恒定 Constant' },
+            { value: 'dragonsurvival:on_self_hit', label: '自身受击 On Self Hit' },
+            { value: 'dragonsurvival:on_target_hit', label: '目标受击 On Target Hit' },
+            { value: 'dragonsurvival:on_target_killed', label: '目标被击杀 On Target Killed' },
+            { value: 'dragonsurvival:on_death', label: '死亡 On Death' },
+            { value: 'dragonsurvival:on_block_break', label: '破坏方块 On Block Break' },
+            { value: 'dragonsurvival:on_key_pressed', label: '按键按下 On Key Pressed' },
+            { value: 'dragonsurvival:on_key_released', label: '按键松开 On Key Released' }
         ],
         upgrade_type: [
             { value: 'dragonsurvival:experience_points', label: '经验点数 Experience Points' },
@@ -3043,7 +3249,7 @@
         dragon_stage: ['is_default', 'growth_range', 'ticks_until_grown', 'modifiers', 'growth_items', 'is_natural_growth_stopped', 'destruction_data'],
         dragon_penalty: ['icon', 'condition', 'effect', 'trigger'],
         projectile_data: ['general_data', 'type_data'],
-        dragon_body: ['is_default', 'unlockable_behavior', 'modifiers', 'can_hide_wings', 'model', 'texture_size', 'animation', 'default_icon', 'bones_to_hide_for_toggle', 'emotes', 'scaling_proportions', 'crouch_height_ratio', 'mounting_offset', 'backpack_offset', 'bettercombat_weapon_offset'],
+        dragon_body: ['is_default', 'unlockable_behavior', 'modifiers', 'can_hide_wings', 'model', 'texture_size', 'animation', 'default_icon', 'bones_to_hide_for_toggle', 'emotes', 'scaling_proportions', 'crouch_height_ratio', 'rideable', 'backpack_offset', 'bettercombat_weapon_offset'],
         dragon_emote_set: ['emotes']
     };
 
@@ -4006,4 +4212,12 @@
 
     // Kept for potential external callers / debugging.
     window.__showDetail = showDetailByFullId;
+    // Exposed for the headless resolver tests (test/webview-resolve.js).
+    window.__dragonResolver = {
+        resolveStructAtPath,
+        resolveMcdocObject,
+        mcdocChildCandidates,
+        inferMcdocChild,
+        isPermissiveMcdocStruct
+    };
 })();

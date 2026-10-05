@@ -1,16 +1,7 @@
+use ::java::data::enchantment::LevelBasedValue
 use ::java::data::advancement::predicate::EntityPredicate
 use ::java::data::worldgen::feature::block_predicate::BlockPredicate
 use ::java::util::attribute::AttributeOperation
-
-struct LevelBasedValueMap {
-    /// 等级依赖函数(https://zh.minecraft.wiki/w/魔咒数据格式/等级依赖函数)
-	type: #[id="enchantment_level_based_value_type"] string,
-	...minecraft:level_based_value[[type]],
-}
-
-type LevelBasedValue = (float | LevelBasedValueMap)
-
-///-----------------------------------------------------------------------------
 
 dispatch minecraft:resource[dragonsurvival:dragon_stage] to struct DragonStage {
     /// 决定此阶段是否是默认阶段全局列表的一部分
@@ -19,7 +10,7 @@ dispatch minecraft:resource[dragonsurvival:dragon_stage] to struct DragonStage {
     /// 阶段的最小和最大成长值
     growth_range: Bounds,
     /// 达到最大成长所需的刻数(可以在1刻到1年之间指定)(20刻 = 1秒)
-    ticks_until_grown: int @ 20..630720000,
+    ticks_until_grown: int @ 1..630720000,
     /// 基于龙成长值(在范围内)缩放的比例属性修饰符
     /// (在范围内意味着如果阶段范围在10到15之间，当前成长值为12，则"等级"将为2)
     modifiers?: [Modifier],
@@ -54,8 +45,8 @@ struct GrowthItem {
     /// 值为0会使物品改为切换'is_growth_stopped'字段
     /// (该字段在默认的'is_natural_growth_stopped'条件中使用)
     growth_in_ticks: int,
-    /// 决定此物品可以使用多少次(默认：无限)
-    maximum_usages?: int @ 1..
+    /// 决定此物品可以使用多少次(默认：-1，即无限)
+    maximum_usages?: int @ -1..
 }
 
 struct DestructionData {

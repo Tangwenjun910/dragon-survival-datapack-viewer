@@ -5,6 +5,7 @@ scripts/**
 mcdoc-src/**
 node_modules/**
 out/test/**
+test/**
 .gitignore
 tsconfig.json
 **/*.map

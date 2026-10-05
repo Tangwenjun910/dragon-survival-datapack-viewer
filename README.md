@@ -34,6 +34,31 @@ npm run compile
 
 在 VS Code 中按 `F5` 启动 Extension Development Host。
 
+字段校验自测（确认“字段放错分支会报错”，同时合法数据不误报）：
+```bash
+npm test
+```
+
+- `test/schema-bindings.js`：两个引擎里的 `...dispatch` 绑定表是否与 `mcdoc-src` 一致
+- `test/enum-tables.js`：判别字段的枚举候选是否覆盖 mcdoc 里所有 dispatch 取值
+- `test/field-placement-cases.js`：编辑器诊断——字段放错变体/分支必须报错
+- `test/webview-resolve.js`：侧边栏界面——同样的字段必须被标为无效
+- `test/variant-matrix.js`：反向保护——所有合法变体与联合分支必须零告警
+- `test/scan-unvalidated.js`：覆盖率报告，列出仍无法校验的位置（调试用）
+
+同步上游字段定义（mcdoc）的步骤：
+
+1. 下载 [dragonsurvival-mcdoc-completion-zh](https://github.com/Dragon-LinFeng/dragonsurvival-mcdoc-completion-zh) 的 master ZIP，解压后覆盖 `mcdoc-src/`（ZIP 内为 LF 换行，请保持 LF）。
+2. 更新 `scripts/generateMcdocSchema.js` 顶部的 `UPSTREAM_VERSION`。
+3. 重新生成并自检：
+
+```bash
+node scripts/generateMcdocSchema.js
+npm test
+```
+
+`npm test` 会检查两个引擎的 dispatch 绑定表与枚举表是否跟上了新 mcdoc，以及新字段是否引入误报；如果失败，按提示补 `DISPATCH_BINDINGS` / `ENUM_VALUES` / `ENUM_OPTIONS` 即可。
+
 ## 目录结构
 
 ```text
@@ -50,6 +75,9 @@ media/
   main.js                   # Webview 前端逻辑
   style.css                 # Webview 样式
   dragon.svg                # 活动栏图标
+test/
+  run-all.js                # 运行全部校验测试
+  docgen.js                 # 按 mcdoc 生成合法数据包文档（测试用）
 ```
 
 ## 图标来源
@@ -66,9 +94,11 @@ media/
 - 保存时会重写为标准 JSON（移除注释和尾逗号）。
 - 目前是“基础编辑”，适合修改数值、ID、颜色等；复杂嵌套建议配合原始 JSON 视图。
 - 如果数据包使用了跨命名空间标签，解析时会尽量在所有已发现命名空间中查找。
+- 少数位置无法做字段校验：原版谓词与 NBT（`usage_blocked`、`condition`、`nbt` 等）以及 `particle_data` 这类 mcdoc 未展开的原版类型，只校验外层字段名。`npm test` 里的覆盖率报告会列出这些位置。
 
 ## 鸣谢：
 核心数据补全来源LinFeng的https://github.com/Dragon-LinFeng/dragonsurvival-mcdoc-completion-zh
+（当前同步自 **v2.1.0**，适用于 龙之生存 1.21.1 **v2.0.71** 及以上；`mcdoc-src/` 为该项目的 mcdoc 源文件副本）
 
 ## 声明：
 本项目是基于 龙之生存 的第三方开发工具。

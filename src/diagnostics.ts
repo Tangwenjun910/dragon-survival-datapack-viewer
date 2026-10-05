@@ -1,7 +1,9 @@
+// Diagnostics engine: walks datapack JSON and reports fields the mcdoc schema
+// does not allow at their position, plus missing required fields.
 import * as fs from 'fs';
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { MCDOC_STRUCTS, KIND_TO_STRUCT, MCDOC_DISPATCH, MCDOC_STRUCT_CHILDREN } from './mcdocSchema';
+import { MCDOC_STRUCTS, KIND_TO_STRUCT, KIND_TO_UNION, MCDOC_DISPATCH, MCDOC_STRUCT_CHILDREN } from './mcdocSchema';
 import { getCustomFieldContext, getCustomValuesForContext } from './customFields';
 
 const KIND_PATTERNS: Record<string, RegExp> = {
@@ -21,7 +23,8 @@ interface StructInfo {
 
 interface ResolvedStruct {
     baseName?: string;
-    variantName?: string;
+    /** Variant structs contributed by the resolved `...dispatch` spreads. */
+    variantNames: string[];
     struct: StructInfo;
     missingRequired?: string[];
 }
@@ -45,9 +48,17 @@ const ENUM_VALUES: Record<string, string[]> = {
         'dragonsurvival:dragon_growth', 'dragonsurvival:mana_recovery', 'dragonsurvival:experience',
         'dragonsurvival:cooldown_recovery',
         'dragonsurvival:bonemeal', 'dragonsurvival:conversion', 'dragonsurvival:fire', 'dragonsurvival:area_cloud',
-        'dragonsurvival:block_break', 'dragonsurvival:explosion', 'dragonsurvival:block_harvest'
+        'dragonsurvival:block_break', 'dragonsurvival:explosion', 'dragonsurvival:block_harvest',
+        'dragonsurvival:climbable'
     ],
     trigger_point: ['default', 'charging', 'channel_completion'],
+    // Discriminator of ActivationTrigger; without it a typo would go unnoticed and
+    // every trigger variant's fields would be accepted.
+    trigger_type: [
+        'dragonsurvival:constant', 'dragonsurvival:on_self_hit', 'dragonsurvival:on_target_hit',
+        'dragonsurvival:on_target_killed', 'dragonsurvival:on_death', 'dragonsurvival:on_block_break',
+        'dragonsurvival:on_key_pressed', 'dragonsurvival:on_key_released'
+    ],
     direction: ['looking_at', 'towards_entity', 'up', 'down', 'east', 'west', 'south', 'north'],
     display_type: ['outline', 'particles', 'simple_shader', 'none'],
     modification_type: ['additive', 'multiplicative'],
@@ -123,40 +134,75 @@ function getCustomEffectTypes(): string[] {
     return [...all];
 }
 
-// Some mcdoc structs use dynamic `...dispatch[[...]]` spreads that the generated
-// field list cannot fully express. Keep them permissive to avoid false positives.
 const BLOCK_TARGETING = 'BlockTargeting__data_dragonsurvival_dragon_ability';
 const ENTITY_TARGETING = 'EntityTargeting__data_dragonsurvival_dragon_ability';
 const COMBINED_TARGETING = `${BLOCK_TARGETING}+${ENTITY_TARGETING}`;
 
+/**
+ * Structs whose field list cannot be checked because the mcdoc describes them
+ * only through a spread this schema subset cannot resolve.
+ *
+ * `SummonEntityEffect_NBT` spreads `minecraft:entity[[%parent.entities]]`: the
+ * value is arbitrary entity NBT, not the field names used by the surrounding
+ * document.
+ */
 function isPermissiveStruct(name?: string): boolean {
     if (!name) return false;
-    if (name.startsWith('LevelBasedValueMap__')) return true;
-    return name === 'ProjectileWorldEffect__data_dragonsurvival_projectile_data'
-        || name === 'ProjectileBlockEffect__data_dragonsurvival_projectile_data'
-        || name === 'ProjectileEntityEffect__data_dragonsurvival_projectile_data';
+    return name.startsWith('SummonEntityEffect_NBT__');
 }
 
-// Fields introduced by dynamic spreads (not present in the static struct body).
-const EXTRA_OPTIONAL_FIELDS: Record<string, string[]> = {
-    Action__data_dragonsurvival_dragon_ability: ['trigger_point'],
-    Animations__data_dragonsurvival_dragon_ability: ['looping'],
-    Sound__data_dragonsurvival_dragon_ability: ['looping']
-};
+/**
+ * One `...dispatch[[...]]` spread of a struct body.
+ *
+ * `key` is the discriminator field that selects the variant. A spread whose
+ * expression points at another node (`%parent...`) has no local discriminator:
+ * the variant is chosen elsewhere in the document, so every variant of that
+ * registry contributes fields.
+ */
+interface DispatchBinding {
+    key?: string;
+    registry: string;
+}
 
-const DISPATCH_BASES: Record<string, { key: string; registry: string }> = {
-    Activation__data_dragonsurvival_dragon_ability: { key: 'activation_type', registry: 'dragonsurvival:activation' },
-    Upgrade__data_dragonsurvival_dragon_ability: { key: 'upgrade_type', registry: 'dragonsurvival:upgrade_type' },
-    Targeting__data_dragonsurvival_dragon_ability: { key: 'target_type', registry: 'dragonsurvival:ability_targeting' },
-    EntityEffect__data_dragonsurvival_dragon_ability: { key: 'effect_type', registry: 'dragonsurvival:ability_entity_effect' },
-    BlockEffect__data_dragonsurvival_dragon_ability: { key: 'effect_type', registry: 'dragonsurvival:ability_block_effect' },
-    PenaltyEffect__data_dragonsurvival_dragon_penalty: { key: 'penalty_type', registry: 'dragonsurvival:penalty_effect' },
-    PenaltyTrigger__data_dragonsurvival_dragon_penalty: { key: 'penalty_trigger', registry: 'dragonsurvival:penalty_trigger' },
-    ActivationTrigger__data_dragonsurvival_dragon_ability: { key: 'trigger_type', registry: 'dragonsurvival:activation_trigger' },
-    ProjectileTargeting__data_dragonsurvival_projectile_data: { key: 'target_type', registry: 'dragonsurvival:projectile_targeting' },
-    ProjectileWorldEffect__data_dragonsurvival_projectile_data: { key: 'world_effect', registry: 'dragonsurvival:projectile_world_effect' },
-    ProjectileBlockEffect__data_dragonsurvival_projectile_data: { key: 'block_effect', registry: 'dragonsurvival:projectile_block_effect' },
-    ProjectileEntityEffect__data_dragonsurvival_projectile_data: { key: 'entity_effect', registry: 'dragonsurvival:projectile_entity_effect' }
+/**
+ * Dynamic spreads per struct. The mcdoc bodies carry `...registry[[key]]`
+ * spreads; the generated struct field lists can only describe the static fields,
+ * so the fields contributed by these spreads are resolved here.
+ *
+ * Keep in sync with mcdoc-src; `test/schema-bindings.js` checks this table
+ * against the mcdoc sources.
+ */
+const DISPATCH_BINDINGS: Record<string, DispatchBinding[]> = {
+    Activation__data_dragonsurvival_dragon_ability: [{ key: 'activation_type', registry: 'dragonsurvival:activation' }],
+    Upgrade__data_dragonsurvival_dragon_ability: [{ key: 'upgrade_type', registry: 'dragonsurvival:upgrade_type' }],
+    Targeting__data_dragonsurvival_dragon_ability: [{ key: 'target_type', registry: 'dragonsurvival:ability_targeting' }],
+    EntityEffect__data_dragonsurvival_dragon_ability: [{ key: 'effect_type', registry: 'dragonsurvival:ability_entity_effect' }],
+    BlockEffect__data_dragonsurvival_dragon_ability: [{ key: 'effect_type', registry: 'dragonsurvival:ability_block_effect' }],
+    ActivationTrigger__data_dragonsurvival_dragon_ability: [{ key: 'trigger_type', registry: 'dragonsurvival:activation_trigger' }],
+    PenaltyEffect__data_dragonsurvival_dragon_penalty: [{ key: 'penalty_type', registry: 'dragonsurvival:penalty_effect' }],
+    PenaltyTrigger__data_dragonsurvival_dragon_penalty: [{ key: 'penalty_trigger', registry: 'dragonsurvival:penalty_trigger' }],
+    ProjectileTargeting__data_dragonsurvival_projectile_data: [{ key: 'target_type', registry: 'dragonsurvival:projectile_targeting' }],
+    // The three projectile effect containers spread all three registries, so the
+    // variant is selected by whichever discriminator the object carries.
+    ProjectileEntityEffect__data_dragonsurvival_projectile_data: [
+        { key: 'entity_effect', registry: 'dragonsurvival:projectile_entity_effect' },
+        { key: 'block_effect', registry: 'dragonsurvival:projectile_block_effect' },
+        { key: 'world_effect', registry: 'dragonsurvival:projectile_world_effect' }
+    ],
+    ProjectileBlockEffect__data_dragonsurvival_projectile_data: [
+        { key: 'entity_effect', registry: 'dragonsurvival:projectile_entity_effect' },
+        { key: 'block_effect', registry: 'dragonsurvival:projectile_block_effect' },
+        { key: 'world_effect', registry: 'dragonsurvival:projectile_world_effect' }
+    ],
+    ProjectileWorldEffect__data_dragonsurvival_projectile_data: [
+        { key: 'entity_effect', registry: 'dragonsurvival:projectile_entity_effect' },
+        { key: 'block_effect', registry: 'dragonsurvival:projectile_block_effect' },
+        { key: 'world_effect', registry: 'dragonsurvival:projectile_world_effect' }
+    ],
+    // Selected by an ancestor node, not by a field of the object itself.
+    Action__data_dragonsurvival_dragon_ability: [{ registry: 'dragonsurvival:trigger_point' }],
+    Sound__data_dragonsurvival_dragon_ability: [{ registry: 'dragonsurvival:sound' }],
+    Animations__data_dragonsurvival_dragon_ability: [{ registry: 'dragonsurvival:animatioin' }]
 };
 
 function detectKind(uri: vscode.Uri): string | undefined {
@@ -189,125 +235,147 @@ function mergeStructs(...structs: Array<StructInfo | undefined>): StructInfo {
     };
 }
 
-function resolveDispatch(baseName: string, registry: string, value: string | undefined): ResolvedStruct | undefined {
-    const base = getStructInfo(baseName);
-    const variantName = value ? MCDOC_DISPATCH[registry]?.[value] : undefined;
-    const variant = variantName ? getStructInfo(variantName) : undefined;
-    if (!base && !variant) return undefined;
+function variantNamesOf(registry: string): string[] {
+    return Object.values(MCDOC_DISPATCH[registry] || {});
+}
+
+function missingFieldsIn(struct: StructInfo, obj: Record<string, unknown>): string[] {
+    return struct.required.filter(key => !(key in obj));
+}
+
+/**
+ * Struct of one object node: the struct body plus every field contributed by the
+ * dynamic spreads the object's own discriminators select.
+ *
+ * A single-key container (e.g. an entity effect) is resolved by its discriminator
+ * value. The three projectile effect containers carry any one of
+ * `entity_effect` / `block_effect` / `world_effect`, so whichever key is present
+ * selects the variant. When no key is present at all the variant cannot be
+ * determined: every variant of the bound registries stays allowed so custom and
+ * hand-written data keep validating, while the container's own required
+ * discriminator is still reported as missing.
+ */
+function resolveStructForObject(name: string, obj: Record<string, unknown>): ResolvedStruct | undefined {
+    const base = getStructInfo(name);
+    if (!base) return undefined;
+
+    const bindings = DISPATCH_BINDINGS[name];
+    if (!bindings || bindings.length === 0) {
+        return { baseName: name, variantNames: [], struct: base };
+    }
+
+    const selected = new Set<string>();
+    let undeterminedKey = false;
+    for (const binding of bindings) {
+        if (!binding.key) {
+            // The variant is chosen by an ancestor node, so all of them apply.
+            for (const variant of variantNamesOf(binding.registry)) selected.add(variant);
+            continue;
+        }
+        const raw = obj[binding.key];
+        const value = typeof raw === 'string' ? raw : undefined;
+        const variant = value ? MCDOC_DISPATCH[binding.registry]?.[value] : undefined;
+        if (variant && getStructInfo(variant)) {
+            selected.add(variant);
+        } else if (value !== undefined) {
+            // Unknown (datapack-provided) discriminator value: keep that
+            // registry's variants allowed instead of reporting false unknowns.
+            for (const name of variantNamesOf(binding.registry)) selected.add(name);
+        } else {
+            undeterminedKey = true;
+        }
+    }
+
+    // Every discriminator of the struct body is a legal key, whether or not this
+    // object uses it (the mcdoc declares them as independent spreads).
+    const discriminatorKeys: StructInfo = {
+        required: [],
+        optional: bindings.map(binding => binding.key).filter((key): key is string => !!key)
+    };
+
+    if (undeterminedKey && selected.size === 0) {
+        for (const binding of bindings) {
+            for (const variant of variantNamesOf(binding.registry)) selected.add(variant);
+        }
+        const variantNames = [...selected].filter(candidate => !!getStructInfo(candidate));
+        return {
+            baseName: name,
+            variantNames,
+            struct: mergeStructs(base, discriminatorKeys, ...variantNames.map(getStructInfo)),
+            missingRequired: base.required
+        };
+    }
+
+    const variantNames = [...selected].filter(candidate => !!getStructInfo(candidate));
     return {
-        baseName,
-        variantName: variant ? variantName : undefined,
-        struct: mergeStructs(base, variant)
+        baseName: name,
+        variantNames,
+        struct: mergeStructs(base, discriminatorKeys, ...variantNames.map(getStructInfo))
     };
 }
 
-function resolveDiscriminatedStruct(path: (string | number)[], obj: Record<string, unknown>): ResolvedStruct | undefined {
-    const effectType = typeof obj['effect_type'] === 'string' ? obj['effect_type'] as string : undefined;
-    const activationType = typeof obj['activation_type'] === 'string' ? obj['activation_type'] as string : undefined;
-    const upgradeType = typeof obj['upgrade_type'] === 'string' ? obj['upgrade_type'] as string : undefined;
-    const targetType = typeof obj['target_type'] === 'string' ? obj['target_type'] as string : undefined;
-    const penaltyType = typeof obj['penalty_type'] === 'string' ? obj['penalty_type'] as string : undefined;
-    const penaltyTrigger = typeof obj['penalty_trigger'] === 'string' ? obj['penalty_trigger'] as string : undefined;
-    const triggerType = typeof obj['trigger_type'] === 'string' ? obj['trigger_type'] as string : undefined;
-    const blockEffect = typeof obj['block_effect'] === 'string' ? obj['block_effect'] as string : undefined;
-    const entityEffect = typeof obj['entity_effect'] === 'string' ? obj['entity_effect'] as string : undefined;
-    const worldEffect = typeof obj['world_effect'] === 'string' ? obj['world_effect'] as string : undefined;
+/**
+ * Struct for a value that may fit several candidate structs (a union in the
+ * mcdoc, e.g. `BlockTargeting | EntityTargeting`). Fields are checked against
+ * every candidate so a field of the wrong branch is reported, while "missing
+ * required" follows the candidate the value comes closest to matching.
+ */
+function resolveUnionStruct(candidates: string[], obj: Record<string, unknown>): ResolvedStruct | undefined {
+    const resolved = candidates
+        .map(candidate => resolveStructForObject(candidate, obj))
+        .filter((item): item is ResolvedStruct => !!item);
+    if (resolved.length === 0) return undefined;
 
-    if (effectType && path.includes('entity_effect')) {
-        return resolveDispatch('EntityEffect__data_dragonsurvival_dragon_ability', 'dragonsurvival:ability_entity_effect', effectType);
+    let best = resolved[0];
+    let bestMissing = missingFieldsIn(best.struct, obj);
+    for (const candidate of resolved.slice(1)) {
+        const missing = missingFieldsIn(candidate.struct, obj);
+        if (missing.length < bestMissing.length) {
+            best = candidate;
+            bestMissing = missing;
+        }
     }
-    if (effectType && path.includes('block_effect')) {
-        return resolveDispatch('BlockEffect__data_dragonsurvival_dragon_ability', 'dragonsurvival:ability_block_effect', effectType);
-    }
-    if (activationType && path.includes('activation')) {
-        return resolveDispatch('Activation__data_dragonsurvival_dragon_ability', 'dragonsurvival:activation', activationType);
-    }
-    if (upgradeType && path.includes('upgrade')) {
-        return resolveDispatch('Upgrade__data_dragonsurvival_dragon_ability', 'dragonsurvival:upgrade_type', upgradeType);
-    }
-    if (targetType && path.includes('target_selection')) {
-        return resolveDispatch('Targeting__data_dragonsurvival_dragon_ability', 'dragonsurvival:ability_targeting', targetType);
-    }
-    if (penaltyType && path.includes('effect')) {
-        return resolveDispatch('PenaltyEffect__data_dragonsurvival_dragon_penalty', 'dragonsurvival:penalty_effect', penaltyType);
-    }
-    if (penaltyTrigger && path.includes('trigger')) {
-        return resolveDispatch('PenaltyTrigger__data_dragonsurvival_dragon_penalty', 'dragonsurvival:penalty_trigger', penaltyTrigger);
-    }
-    if (triggerType && path.includes('trigger')) {
-        return resolveDispatch('ActivationTrigger__data_dragonsurvival_dragon_ability', 'dragonsurvival:activation_trigger', triggerType);
-    }
-    if (targetType && path.includes('target_type')) {
-        return resolveDispatch('ProjectileTargeting__data_dragonsurvival_projectile_data', 'dragonsurvival:projectile_targeting', targetType);
-    }
-    if (blockEffect) {
-        return resolveDispatch('ProjectileBlockEffect__data_dragonsurvival_projectile_data', 'dragonsurvival:projectile_block_effect', blockEffect);
-    }
-    if (entityEffect) {
-        return resolveDispatch('ProjectileEntityEffect__data_dragonsurvival_projectile_data', 'dragonsurvival:projectile_entity_effect', entityEffect);
-    }
-    if (worldEffect) {
-        return resolveDispatch('ProjectileWorldEffect__data_dragonsurvival_projectile_data', 'dragonsurvival:projectile_world_effect', worldEffect);
-    }
-    return undefined;
+
+    return {
+        baseName: best.baseName,
+        variantNames: [...new Set(resolved.flatMap(item => item.variantNames))],
+        struct: mergeStructs(...resolved.map(item => item.struct)),
+        missingRequired: bestMissing
+    };
 }
 
-function getResolvedStruct(currentStruct: string | undefined, path: (string | number)[], obj: Record<string, unknown>): ResolvedStruct | undefined {
+/**
+ * Discriminator values that are valid enum members but have no `dispatch`
+ * declaration of their own, so they contribute no variant fields.
+ * `dragonsurvival:point` is a valid projectile target type; it must not inherit
+ * radius/particle_trail from the declared `dragonsurvival:area` target.
+ */
+const DISPATCH_VALUES_WITHOUT_VARIANT: Record<string, string[]> = {
+    'dragonsurvival:projectile_targeting': ['dragonsurvival:point']
+};
+
+function getResolvedStruct(currentStruct: string | undefined, obj: Record<string, unknown>): ResolvedStruct | undefined {
+    if (!currentStruct) return undefined;
     if (currentStruct === COMBINED_TARGETING) {
         const blockStruct = getStructInfo(BLOCK_TARGETING);
         const entityStruct = getStructInfo(ENTITY_TARGETING);
         if (blockStruct && entityStruct) {
             return {
                 baseName: BLOCK_TARGETING,
-                variantName: ENTITY_TARGETING,
+                variantNames: [ENTITY_TARGETING],
                 struct: mergeStructs(blockStruct, entityStruct)
             };
         }
         return undefined;
     }
-    if (currentStruct) {
-        const base = getStructInfo(currentStruct);
-        if (!base) return undefined;
-        const dispatch = DISPATCH_BASES[currentStruct];
-        if (dispatch) {
-            const value = typeof obj[dispatch.key] === 'string' ? obj[dispatch.key] as string : undefined;
-            const variantName = value ? MCDOC_DISPATCH[dispatch.registry]?.[value] : undefined;
-            const variant = variantName ? getStructInfo(variantName) : undefined;
-            if (variant) {
-                return {
-                    baseName: currentStruct,
-                    variantName,
-                    struct: mergeStructs(base, variant)
-                };
-            }
-            if (dispatch.registry === 'dragonsurvival:projectile_targeting' && value === 'dragonsurvival:point') {
-                // `dragonsurvival:point` is a valid projectile target type but has
-                // no extra variant fields (unlike `dragonsurvival:area`). It must
-                // not inherit radius/particle_trail from AreaTarget.
-                return { baseName: currentStruct, struct: base };
-            }
-            // Discriminator missing/unknown: don't flag fields that belong to any
-            // variant. Keep the base required key visible so "missing required"
-            // still fires, but allow all variant fields.
-            const allVariants = (Object.values(MCDOC_DISPATCH[dispatch.registry] || {}))
-                .map(name => getStructInfo(name))
-                .filter((s): s is StructInfo => !!s);
-            return {
-                baseName: currentStruct,
-                struct: mergeStructs(base, ...allVariants),
-                missingRequired: base.required
-            };
-        }
-        return { baseName: currentStruct, struct: base };
-    }
-    return resolveDiscriminatedStruct(path, obj);
+    return resolveStructForObject(currentStruct, obj);
 }
 
 function getChildCandidates(resolved: ResolvedStruct | undefined, field: string): string[] {
     if (!resolved) return [];
     const names: string[] = [];
     if (resolved.baseName) names.push(resolved.baseName);
-    if (resolved.variantName) names.push(resolved.variantName);
+    for (const variantName of resolved.variantNames) names.push(variantName);
     const result = new Set<string>();
     for (const name of names) {
         const map = MCDOC_STRUCT_CHILDREN[name];
@@ -389,8 +457,15 @@ function validateDocument(document: vscode.TextDocument, collection: vscode.Diag
 
     const diagnostics: vscode.Diagnostic[] = [];
     const rootStruct = KIND_TO_STRUCT[kind];
-    if (json && typeof json === 'object' && !Array.isArray(json) && rootStruct) {
-        validateNode(json, [], diagnostics, document, rootStruct, kind);
+    const rootUnion = KIND_TO_UNION[kind];
+    if (json && typeof json === 'object' && !Array.isArray(json)) {
+        if (rootUnion && rootUnion.length > 1) {
+            // The kind accepts several root structs (e.g. dragon_body with and
+            // without a custom model): check against all of them.
+            validateNode(json, [], diagnostics, document, undefined, kind, rootUnion);
+        } else if (rootStruct) {
+            validateNode(json, [], diagnostics, document, rootStruct, kind);
+        }
     }
 
     collection.set(document.uri, diagnostics);
@@ -402,11 +477,12 @@ function validateNode(
     diagnostics: vscode.Diagnostic[],
     document: vscode.TextDocument,
     currentStruct: string | undefined,
-    kind: string | undefined
+    kind: string | undefined,
+    unionStructs?: string[]
 ): void {
     if (Array.isArray(node)) {
         for (let i = 0; i < node.length; i++) {
-            validateNode(node[i], [...path, i], diagnostics, document, currentStruct, kind);
+            validateNode(node[i], [...path, i], diagnostics, document, currentStruct, kind, unionStructs);
         }
         return;
     }
@@ -416,14 +492,13 @@ function validateNode(
     }
 
     const obj = node as Record<string, unknown>;
-    let resolved = getResolvedStruct(currentStruct, path, obj);
+    const resolved = unionStructs && unionStructs.length > 0
+        ? resolveUnionStruct(unionStructs, obj)
+        : getResolvedStruct(currentStruct, obj);
     const customContext = getCustomFieldContext(kind, currentStruct, path, obj);
 
-    if (resolved && !isPermissiveStruct(currentStruct)) {
+    if (resolved && !isPermissiveStruct(currentStruct) && !isPermissiveStruct(resolved.baseName)) {
         const allowed = new Set<string>([...resolved.struct.required, ...resolved.struct.optional]);
-        for (const extra of EXTRA_OPTIONAL_FIELDS[currentStruct || ''] || []) {
-            allowed.add(extra);
-        }
         for (const key of customContext.fields) {
             allowed.add(key);
         }
@@ -477,23 +552,32 @@ function validateNode(
 
         const candidates = resolved ? getChildCandidates(resolved, key) : [];
         let childStruct: string | undefined;
+        let childUnion: string[] | undefined;
         if (candidates.length === 1) {
             childStruct = candidates[0];
-        } else if (candidates.length > 1 && child && typeof child === 'object' && !Array.isArray(child)) {
-            childStruct = inferChildStruct(candidates, child as Record<string, unknown>);
+        } else if (candidates.length > 1) {
+            if (child && typeof child === 'object' && !Array.isArray(child)) {
+                childStruct = inferChildStruct(candidates, child as Record<string, unknown>);
+            }
+            // The value fits no single member of the union (the mcdoc offers
+            // alternative structs): check it against every member so a field of
+            // the wrong branch is still reported.
+            if (!childStruct) childUnion = candidates;
         }
 
         if (Array.isArray(child)) {
             for (let i = 0; i < child.length; i++) {
                 const item = child[i];
                 let itemStruct = childStruct;
+                let itemUnion: string[] | undefined = childUnion;
                 if (candidates.length > 1 && item && typeof item === 'object' && !Array.isArray(item)) {
                     itemStruct = inferChildStruct(candidates, item as Record<string, unknown>) || undefined;
+                    itemUnion = itemStruct ? undefined : candidates;
                 }
-                validateNode(item, [...path, key, i], diagnostics, document, itemStruct, kind);
+                validateNode(item, [...path, key, i], diagnostics, document, itemStruct, kind, itemUnion);
             }
         } else {
-            validateNode(child, [...path, key], diagnostics, document, childStruct, kind);
+            validateNode(child, [...path, key], diagnostics, document, childStruct, kind, childUnion);
         }
     }
 }
